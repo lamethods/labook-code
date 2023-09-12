@@ -1,0 +1,432 @@
+---
+title: "Predictive Modelling in Learning Analytics using R"
+author: 
+   - name: "Jelena Jovanovic"
+   - name: "Sonsoles López-Pernas"
+   - name: "Mohammed Saqr"
+dpi: 800
+execute: 
+  message: F
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+---
+
+
+```{r include=FALSE}
+if (!require("tidyverse")) install.packages("tidyverse")
+if (!require("lubridate")) install.packages("lubridate")
+if (!require("rio")) install.packages("rio")
+```
+Load the required R packages (additional ones will be loaded as needed)
+
+```{r message=FALSE}
+library(tidyverse)
+library(lubridate)
+library(rio)
+```
+
+## Exploratory data analysis
+
+### Load and explore events data
+```{r}
+events = import("https://github.com/lamethods/data/raw/main/1_moodleLAcourse/Events.xlsx")
+```
+
+```{r}
+glimpse(events)
+```
+
+Examine the course time span
+```{r}
+str_glue("The 1st timestamp: {min(events$timecreated)}, the last timestamp {max(events$timecreated)}")
+```
+
+Compute the length of the course (in weeks)
+```{r}
+difftime(max(events$timecreated), min(events$timecreated), units = 'weeks')
+```
+
+Extend the data set with additional variables that will allow for examining temporal aspects of the course events, from the perspective of weeks and week days
+```{r}
+events |>
+  arrange(timecreated) |>
+  mutate(wday = wday(timecreated, 
+                     label = TRUE, 
+                     abbr = TRUE, 
+                     week_start = 1)) |>
+  mutate(prev_wday = lag(wday)) |>
+  mutate(new_week = ifelse((wday=="Mon") & 
+                             (is.na(prev_wday) | prev_wday!="Mon"), 
+                           yes = TRUE, no = FALSE)) |>
+  mutate(course_week = cumsum(new_week)) -> events
+```
+
+Remove auxiliary columns
+```{r}
+events |> select(-c(wday, prev_wday, new_week)) -> events
+```
+
+
+The distribution of action counts across the course weeks
+```{r}
+events |>
+  count(course_week) |>
+  mutate(prop = round(n/nrow(events), 4))
+```
+
+```{r}
+events |>
+  filter(course_week == 1) |>
+  mutate(date = as.Date(timecreated)) |>
+  mutate(wday = wday(timecreated, label = T, week_start = 1)) |>
+  count(date)
+```
+
+
+Examine factor variables that represent different types of actions and logged events
+```{r}
+events |>
+  summarise(across(c(Event.context, Component:Action), n_distinct))
+```
+
+Examine how Components, Events and Actions relate to one another - the idea is to develop good understanding of the logged actions
+```{r}
+events |>
+  count(Component,Event.name, Action) |> 
+  arrange(Component, desc(n))  
+```
+
+Do the same for Action and Log
+```{r}
+events |>
+  count(Action, Log) |>
+  arrange(Action)
+```
+
+Rename some of the Action values to make it clear that they refer to distinct topics of the course materials
+```{r}
+topical_action <- c("General", "Applications", "Theory",  "Ethics", "Feedback", "La_types")
+
+events |>
+  mutate(action = ifelse(test = Action %in% topical_action, 
+                         yes = str_glue("Materials_{Action}"), 
+                         no = Action), 
+         .keep="unused") -> events
+```
+
+Examine action counts across different action types and course weeks
+```{r}
+events |>
+  count(course_week, action) |>
+  arrange(course_week, desc(n)) -> action_dist_across_weeks
+```
+
+```{r}
+action_dist_across_weeks |>
+  mutate(Action = as.factor(action)) |>
+  ggplot(aes(x = course_week, y = n, fill=action)) +
+  geom_col(position = position_fill()) +
+  scale_fill_brewer(palette = 'Paired') +
+  scale_x_continuous(breaks = seq(1,7)) +
+  labs(x = "\nCourse week", y = "Proportion\n") +
+  theme_minimal()
+```
+Keep only the variables to be used for further analysis and rename some of the remaining ones to keep naming consistent
+```{r}
+events |> 
+  select(user, timecreated, course_week, action) |>
+  rename(week = course_week, ts = timecreated) -> events
+```
+
+Store the processed and prepared events data
+```{r}
+saveRDS(events, "preprocessed_data/events.RData")
+```
+
+
+### Load and examine results data
+```{r}
+results = rio::import("https://github.com/lamethods/data/raw/main/1_moodleLAcourse/Results.xlsx")
+```
+
+```{r}
+glimpse(results)
+```
+We will need just the final grades since it is unclear when during the course the individual assignment grades became available
+
+
+Examine the summary statistics and distribution of the final grade
+```{r}
+summary(results$Final_grade)
+```
+
+```{r}
+ggplot(results, aes(x = Final_grade)) +
+  geom_density() +
+  labs(x = "Final grade", 
+       title = "Distribution of the final grade") +
+  theme_minimal()
+```
+It is not normally distributed, but skewed towards higher grade values
+
+Let's add Course_outcome as a binary variable indicating if a student passed the course or not. 
+Students whose final grade is above 50th percentile (median) will be considered as having positive course outcome (HIGH), the rest will be considered as having negative course outcome (LOW)
+```{r}
+results |>
+  mutate(Course_outcome = ifelse(test=Final_grade > median(Final_grade),
+                                 yes = "High", no = "Low")) |>
+  mutate(Course_outcome=factor(Course_outcome)) -> results
+```
+
+```{r}
+table(results$Course_outcome)
+```
+This gives us a perfectly balanced data set for the outcome prediction (classification) task. 
+
+Save the final grades (as numeric and binary variable), to be ready for later use
+```{r}
+results |>
+  select(user, Final_grade, Course_outcome) |> 
+  saveRDS("preprocessed_data/final_grades.RData")
+```
+
+
+## Features
+
+Three groups of action-based features will be computed and used:
+
+* Features based on learning action counts:
+  - Total number of each type of learning actions 
+  - Average number of actions (of any type) per day
+  - Entropy of action counts per day
+
+* Features based on learning sessions:
+  - Total number of learning sessions
+  - Average (median) session length (time)
+  - Entropy of session length
+
+* Features based on number of active days (= days with at least one learning session)
+  - Number of active days
+  - Average time distance between two consecutive active days
+
+We will first clean the memory and load just the data that we need for feature creation and model building
+```{r}
+remove(list = ls())
+gc()
+
+events = readRDS("preprocessed_data/events.RData")
+results = readRDS("preprocessed_data/final_grades.RData")
+```
+
+
+To compute features based on counts per day, we need to add the date variable
+```{r}
+events |>
+  mutate(date = as.Date(ts)) -> events
+```
+
+To compute features based on session counts, we need to add sessions to the events data.
+To that end, we will, first, compute time distance between any two consecutive actions of each user
+```{r}
+events |>
+  group_by(user) |>
+  arrange(ts) |>
+  mutate(ts_diff = ts - lag(ts)) |>
+  ungroup() -> events
+```
+
+Next, examine the distribution of time differences between any two consecutive actions of each user, to set up a threshold for splitting action sequences into sessions   
+```{r}
+events |> pull(ts_diff) -> ts_diff
+
+ts_diff_mins <- as.numeric(ts_diff, units='mins')
+ts_diff_hours <- as.numeric(ts_diff, units='hours')
+
+summary(ts_diff_mins)
+```
+
+```{r}
+#quantile(ts_diff_mins, probs = seq(0.9, 1, 0.01), na.rm = TRUE) |> round(3)
+quantile(ts_diff_hours, probs = seq(0.8, 1, 0.01), na.rm = TRUE) |> round(3)
+```
+
+Set 1.5h (value between 93th and 94th percentile) as the threshold for session creation
+```{r}
+events |>
+  mutate(ts_diff_hours = as.numeric(ts_diff, units = 'hours')) |>
+  group_by(user) |>
+  arrange(ts) |>
+  mutate(new_session = (is.na(ts_diff_hours)) | (ts_diff_hours >= 1.5)) |>   
+  mutate(session_nr = cumsum(new_session))|> 
+  mutate(session_id = paste0(user,"_", "session_",session_nr)) |>
+  ungroup() -> events_with_sessions
+```
+
+Add session length variable as it will be required for the computation of some of the features
+```{r}
+events_with_sessions |>
+  group_by(session_id) |>
+  mutate(session_len = as.numeric(max(ts) - min(ts), units="secs")) |>
+  ungroup() -> events_with_sessions
+```
+
+Keep just the relevant columns
+```{r}
+events_with_sessions |>
+  select(user, ts, date, week, action, session_nr, session_id, session_len) -> events_with_sessions
+```
+
+Features will be computed cumulatively for all course weeks up to the current one (i.e., when computing features in week k, data for weeks 1..k will be used). Functions for computing feature values and creation of a feature set are in the 'feature_creation.R' script.
+
+
+## Predictive modeling
+
+```{r include=FALSE}
+if (!require("caret")) install.packages("caret")
+if (!require("randomForest")) install.packages("randomForest")
+if (!require("performance")) install.packages("performance")
+if (!require("corrplot")) install.packages("corrplot")
+if (!require("see")) install.packages("see")
+```
+Load additional R packages required for model building and evaluation 
+```{r message=FALSE}
+library(caret)
+library(randomForest)
+library(performance)
+library(corrplot)
+library(see)
+```
+
+Load scripts with functions for feature creation and model building and evaluation
+```{r}
+source("feature_creation.R")
+source("model_develop_and_eval.R")
+```
+
+### Create (classification) models for predicting course outcome, based on progresively more weeks of events data
+
+Starting from week 1, up to week 5, create predictive models and examine their performance
+```{r warning=FALSE, message=FALSE}
+models <- list()
+eval_measures <- list()
+
+for(k in 1:5) {
+  
+  print(str_glue("Starting computations for week {k} as the current week"))
+  
+  ds <- create_dataset_for_course_success_prediction(events_with_sessions, 
+                                                  k, results)
+  
+  set.seed(2023)
+  train_indices <- createDataPartition(ds$Course_outcome, 
+                                       p = 0.8, list = FALSE)
+  train_ds <- ds[train_indices,] |> select(-user)
+  test_ds <- ds[-train_indices,] |> select(-user)
+
+  rf <- build_RF_classification_model(train_ds)
+  eval_rf <- get_classification_evaluation_measures(rf, test_ds)
+  
+  models[[k]] <- rf
+  eval_measures[[k]] <- eval_rf
+}
+```
+
+Compare the models based on the evaluation measures
+```{r}
+eval_df <- bind_rows(eval_measures)
+eval_df |>
+  mutate(week = 1:5) |>
+  mutate(across(Accuracy:F1, \(x) round(x, digits=4))) |>
+  select(week, Accuracy:F1) 
+```
+According to all measures, model #2, with the data from the first two weeks of the course, is the best one. So, the students' interaction with the course activities in the first two weeks is the most predictive of their overall course outcome.    
+
+Examine the importance of features in the best model 
+```{r}
+compute_and_plot_variable_importance(models[[2]])
+```
+Entropy-based features, that is, features reflective of the regularity of study are those with the highest predictive power, which is in line with the literature.
+
+
+### Create models for predicting final grade, based on progresively more weeks of events data
+
+We will first try to build a linear regression model, as it is the most often used regression model in LA.
+
+To determine if linear modelling will be applicable, we'll make use of the data from the 1st week of the course and try to build a linear regression model 
+```{r message=FALSE}
+ds <- create_dataset_for_grade_prediction(events_with_sessions, 1, results)
+
+set.seed(2023)
+train_indices <- createDataPartition(ds$Final_grade, p = 0.8, list = FALSE)
+train_ds <- ds[train_indices,] |> select(-user)
+test_ds <- ds[-train_indices,] |> select(-user)
+
+# examine correlations among the variables (for a linear regression model, they must not be highly mutually correlated)
+corrplot(train_ds |> select(-Final_grade) |> cor(), 
+         method = "number", type = "lower",
+         diag = FALSE, order='hclust',
+         tl.cex=0.75, tl.col='black', tl.srt = 30, number.cex=0.65)
+```
+Remove variables that are highly correlated with other variables
+```{r}
+train_ds |> select(-c(session_cnt, Course_view_cnt, 
+                      active_days_cnt, entropy_daily_cnts)) -> train_ds_sub
+```
+
+Build a model and check if it satisfies the assumptions that linear regression models are based upon 
+```{r, fig.width=6, fig.height=9}
+lr <- lm(Final_grade ~ ., data = train_ds_sub)
+check_model(lr)
+```
+From the above model check, it is clear that two important assumptions of linear models are not met: linearity and homoschedasticity (i.e. homogeneity of variance). 
+Therefore, linear model cannot be used.
+
+As a side note, in addition to checking all assumptions at once, using the `check_model` function, one can also check each assumption individually using appropriate functions from the the *performance* R package. For example, from the figure above, we can not clearly see the X-axis of the collinearity plot, so,if we want to examine collinearity more closely, we can invoke the function `check_collinearity`:
+```{r}
+check_collinearity(lr)
+```
+From the function's result, we can now clearly see the VIF (Variance Inflation Factor) values for all the features and a confirmation that the assumption of the absence of multi-colinearity is satisfied. 
+
+The whole list of functions for different ways of checking regression models is available at: https://easystats.github.io/performance/reference/index.html
+
+We will instead use RF to do the regression.
+```{r warning=FALSE, message=FALSE}
+regression_models <- list()
+regression_eval <- list()
+
+for(k in 1:5) {
+  
+  print(str_glue("Starting computations for week {k} as the current week"))
+  
+  ds <- create_dataset_for_grade_prediction(events_with_sessions, k, results)
+  
+  set.seed(2023)
+  train_indices <- createDataPartition(ds$Final_grade, p = 0.8, list = FALSE)
+  train_ds <- ds[train_indices,] |> select(-user)
+  test_ds <- ds[-train_indices,] |> select(-user)
+
+  rf <- build_RF_regression_model(train_ds)
+  eval_rf <- get_regression_evaluation_measures(rf, train_ds, test_ds)
+  
+  regression_models[[k]] <- rf
+  regression_eval[[k]] <- eval_rf
+}
+```
+
+```{r}
+regression_eval_df <- bind_rows(regression_eval)
+regression_eval_df |>
+  mutate(WEEK = 1:5) |>
+  mutate(across(R2:MAE, \(x) round(x, digits=4))) |>
+  select(WEEK, R2, RMSE, MAE)
+```
+Again, the model with data from the first two weeks is the best in terms of the error it makes (RMSE, MAE).
+So, as early as the 2nd week of the course, we can make a prediction of the final grade and expect to predict it with ~0.5 error in grade points. Considering the range for the final grade (0-10), this is a small error.  
+
+Examine the importance of features in the best model 
+```{r}
+compute_and_plot_variable_importance(regression_models[[2]])
+```
+Again, regularity of study features are among the most important ones
