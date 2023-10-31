@@ -1,0 +1,600 @@
+---
+title: "A modern approach to transition analysis and process mining with Markov models: A tutorial with R" 
+author: 
+   - name: "Jouni Helske"
+   - name: "Satu Helske"
+   - name: "Mohammed Saqr"
+   - name: "Sonsoles López-Pernas"
+   - name: "Keefe Murphy"
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+dpi: 900
+---
+
+## Examples with R
+### Preparation
+Libraries
+```{r, message = FALSE, warning = FALSE, results = FALSE}
+library(qgraph)
+library(rio)
+library(seqHMM)
+library(tidyverse)
+library(TraMineR)
+```
+
+Download data and create sequence
+
+```{r}
+URL <- "https://github.com/sonsoleslp/labook-data/raw/main/"
+simulated_data <- import(paste0(URL, "12_longitudinalRoles/simulated_roles.csv"))
+
+roles_seq <- seqdef(
+  simulated_data, 
+  var = 3:22, 
+  alphabet = c("Isolate", "Mediator", "Leader"),
+  cnames = 1:20
+)
+
+cpal(roles_seq) <- c("#FBCE4B", "#F67067", "#5C2262")
+
+cov_data <- simulated_data |>
+  select(ID, GPA) |>
+  mutate(GPA = factor(GPA, levels = c("Low", "Middle", "High")))
+```
+
+### Markov models 
+
+
+#### Markov model
+
+```{r}
+markov_model <- build_mm(roles_seq)
+```
+
+
+```{r}
+print(markov_model)
+```
+We can also draw a graph of the estimated model using the `plot` method which by default shows the states as pie graphs (for the MM, the pie graphs only consist of one state), transition probabilities as directed arrows, and initial probabilities below each state (see @fig-mm-pie).
+
+```{r, fig.width=8, fig.height=3, fig.align="center", fig.cap="Estimated Markov model as a pie charts with the transition probabilities shown as labelled edges."}
+#| label: fig-mm-pie
+plot(markov_model, 
+  legend.prop = 0.2, ncol.legend = 3, 
+  edge.label.color = "black", vertex.label.color = "black")
+```
+
+#### Hidden Markov models
+
+
+```{r}
+set.seed(1)
+hidden_markov_model <- build_hmm(observations = roles_seq, n_states = 2)
+```
+
+
+```{r}
+fit_hmm <- fit_model(hidden_markov_model)
+fit_hmm$model
+```
+
+HMM with two hidden states (pie charts), with transitions between hidden states shown as labelled edges.
+```{r, fig.width=8, fig.height=3, fig.align="center"}
+#| label: fig-hmm-pie
+plot(fit_hmm$model, 
+  ncol.legend = 4, legend.prop = 0.2, 
+  edge.label.color = "black", vertex.label.color = "black"
+)
+```
+
+Build model with user-defined starting values
+```{r}
+## Set seed for randomisation
+set.seed(1)
+
+## Initial state probability vector, must sum to one
+init_probs <- c(0.3, 0.4, 0.3)
+
+## a 3x3 transition matrix, each row should sum to one
+trans_probs <- rbind(c(0.8, 0.15, 0.05), c(0.2, 0.6, 0.2), c(0.05, 0.15, 0.8))
+
+## Simulate emission probabilities
+emission_probs <- simulate_emission_probs(
+  n_states = 3, n_symbols = length(alphabet(roles_seq))
+)
+
+## Build the HMM
+hidden_markov_model_2 <- build_hmm(
+  roles_seq, initial_probs = init_probs, transition_probs = trans_probs,
+  emission_probs = emission_probs
+)
+```
+
+Fit model
+```{r}
+set.seed(1)
+fit_hmm_2 <- fit_model(hidden_markov_model_2, 
+  control_em = list(restart = list(times = 50))
+)
+```
+
+EM estimation
+```{r}
+fit_hmm_2$em_results
+```
+
+HMM with three hidden states (pie charts), with transitions between hidden states shown as labelled edges.
+```{r, fig.width=8, fig.height=4, fig.align="center"}
+#| label: fig-hmm-2
+plot(fit_hmm_2$model, 
+  legend.prop = 0.15, ncol.legend = 3,
+  edge.label.color = "black", vertex.label.color = "black",
+  combine.slices = 0, trim = 0.0001
+)
+```
+
+Observed and hidden state sequences from the HMM with three hidden states.
+```{r, fig.width=6, fig.height=6, fig.keep = "last", fig.align="center"}
+ssplot(fit_hmm_2$model, 
+  # Plot sequence index plot (full sequences)
+  type = "I", 
+  # Plot observed and hidden state sequences
+  plots = "both", 
+  # Sort sequences by the scores of multidimensional scaling
+  sortv = "mds.hidden",
+  # X axis tick labels
+  xtlab = 1:20
+)
+```
+
+Build HMM
+```{r}
+## Set seed for randomisation
+set.seed(1)
+
+## Build and estimate a HMM with four states
+hidden_markov_model_3 <- build_hmm(roles_seq, n_states = 4)
+
+fit_hmm_3 <- fit_model(hidden_markov_model_3, 
+  control_em = list(restart = list(times = 100))
+)
+
+fit_hmm_3$em_results$best_opt_restart
+```
+
+
+
+```{r}
+BIC(fit_hmm$model)
+BIC(fit_hmm_2$model)
+BIC(fit_hmm_3$model)
+```
+
+
+#### Mixture Markov models
+
+
+```{r}
+## Set seed for randomisation
+set.seed(123)
+## Define model structure (3 clusters)
+mmm <- build_mmm(roles_seq, n_clusters = 3)
+```
+
+
+```{r}
+fit_mmm <- fit_model(mmm)
+```
+
+MMM with three clusters
+```{r, fig.width=6, fig.keep = "last", fig.align="center"}
+plot(fit_mmm$model, 
+  # Plot all clusters at the same time
+  interactive = FALSE, 
+  # Set the number of rows and columns for cluster plots (one row, three columns)
+  nrow = 1, ncol = 3,
+  # Omit legends
+  with.legend = FALSE, 
+  # Choose another layout for the vertices (see plot.igraph)
+  layout = layout_in_circle,
+  # Omit pie graphs from vertices
+  pie = FALSE,
+  # Set state colours
+  vertex.label.color = c("black", "black", "white"),
+  # Set state label colours
+  vertex.color = cpal(roles_seq),
+  # Increase the size of the circle
+  vertex.size = 80,
+  # Plot state labels instead of initial probabilities
+  vertex.label = "names", 
+  # Choose font colour for state labels
+  vertex.label.color = "black", 
+  # Set state label in the centre of the circle
+  vertex.label.dist = 0,
+  # Omit labels for transition probabilities
+  edge.label = NA
+)
+```
+
+State distribution plots by most probable clusters estimated with the mixture Markov model (don't forget to click enter on the console)
+```{r, fig.width=6, fig.height=4, fig.keep=c(2,3,4), layout=c(2,2), fig.align="center"}
+cl1 <- mssplot(fit_mmm$model, 
+  # Plot Y axis
+  yaxis = TRUE, 
+  # Legend position
+  with.legend	= "bottom",
+  # Legend columns
+  ncol.legend = 3,
+  # Label for Y axis
+  ylab = "Proportion"
+)
+```
+
+
+```{r}
+set.seed(98765)
+mmm_2 <- build_mmm(
+  roles_seq, 
+  # Starting values for initial probabilities
+  initial_probs = fit_mmm$model$initial_probs,
+  # Starting values for transition probabilities
+  transition_probs = fit_mmm$model$transition_probs,
+  # Data frame for covariates
+  data = cov_data, 
+  # Formula for covariates (one-sided)
+  formula = ~ 0 + GPA
+)
+```
+
+
+```{r}
+#| cache: true
+set.seed(12345)
+fit_mmm_2 <- fit_model(
+  mmm_2, 
+  # EM with randomised restarts
+  control_em = list(
+    restart = list(
+      # 50 restarts
+      times = 50, 
+      # Store loglik values from all 50 + 1 estimation rounds
+      n_optimum = 51
+    )
+  )
+)
+```
+
+
+```{r}
+fit_mmm_2$em_results$best_opt_restart
+```
+
+State distribution plots by most probable clusters estimated with the mixture Markov model with covariates (don't forget to click enter on the console)
+```{r, fig.width=6, fig.height=4, fig.keep=c(2,3,4), layout=c(2,2), fig.align="center"}
+cluster_names(fit_mmm_2$model) <- c(
+  "Mainly leader", "Isolate/mediator", "Mediator/leader"
+)
+mssplot(fit_mmm_2$model, with.legend = "bottom", ncol.legend = 3)
+```
+
+
+```{r}
+summary_mmm_2 <- summary(fit_mmm_2$model)
+summary_mmm_2
+```
+
+
+```{r}
+exp(fit_mmm_2$model$coefficients)/rowSums(exp(fit_mmm_2$model$coefficients))
+```
+
+
+```{r}
+prior_prob <- summary_mmm_2$prior_cluster_probabilities
+posterior_prob <- summary_mmm_2$posterior_cluster_probabilities
+```
+
+#### Mixture hidden Markov models
+
+```{r, echo = FALSE}
+error_hook <- knitr::knit_hooks$get("error")
+knitr::knit_hooks$set(error = function(x, options) {
+  if (!is.null(n <- options$linewidth)) {
+    x = knitr:::split_lines(x)
+    if (any(nchar(x) > n)) x = strwrap(x, width = n)
+    x = paste(x, collapse = '\n')
+  }
+  error_hook(x, options)
+})
+```
+
+```{r, linewidth = 80, error = TRUE}
+set.seed(123)
+mhmm <- build_mhmm(
+  roles_seq, 
+  n_states = c(2, 2, 2),
+  data = cov_data, 
+  formula = ~ 0 + GPA
+)
+fit_mhmm <- fit_model(mhmm)
+```
+
+
+```{r}
+set.seed(1)
+
+## Set initial probabilities
+init <- list(c(1, 0), c(1, 0), c(1, 0))
+
+## Define own transition probabilities
+trans <- matrix(c(
+  0.9, 0.1,
+  0.1, 0.9
+), nrow = 2, byrow = TRUE)
+
+translist <- list(trans, trans, trans)
+
+## Simulate emission probabilities
+emiss <- simulate_emission_probs(
+  n_states = c(2, 2, 2), 
+  n_symbols = 3, 
+  n_clusters = 3
+)
+
+emiss <- replicate(3, matrix(1/3, 2, 3), simplify = FALSE)
+
+## Define initial values for coefficients
+## Here we start from a case where low GPA correlates with Cluster 1, 
+## whereas middle and high GPA has no effect
+beta <- cbind(0, c(-2, 0, 0), c(-2, 0, 0))
+
+## Define model structure
+mhmm_2 <- build_mhmm(
+  roles_seq, 
+  initial_probs = init, transition_probs = translist, 
+  emission_probs = emiss, data = cov_data, 
+  formula = ~ 0 + GPA, beta = beta
+)
+```
+
+Now that we have built the MHMM, we can estimate its parameters:
+
+```{r}
+set.seed(1)
+suppressWarnings(fit_mhmm_2 <- fit_model(
+  mhmm_2,
+  control_em = list(restart = list(times = 100, n_optimum = 101)))
+)
+```
+
+We can now check how many times the log-likelihood values occurred in the 101 estimations:
+```{r}
+table(round(fit_mhmm_2$em_results$best_opt_restart, 2))
+```
+
+MHMM estimated sequence distribution plot with hidden states (don't forget to click enter on the console)
+
+```{r, fig.width=4.6, fig.height=6, fig.keep = c(2,3,4), layout = c(1,1,1), fig.align="center"}
+mssplot(fit_mhmm_2$model, 
+        plots = "both", type = "I", sortv = "mds.hidden", 
+        with.legend = "bottom.combined", legend.prop = .15)
+```
+
+Transitions between states for each trajectory
+
+```{r, fig.width=8,fig.height=4 , fig.keep='last', fig.dpi = 100, fig.align='center'}
+#| label: fig-mhmm-pie
+plot(fit_mhmm_2$model, 
+  vertex.size = 60,
+  label.color = "black",
+  vertex.label.color = "black",
+  edge.color = "lightgray",
+  edge.label.color = "black",
+  legend.prop = 0.4,
+  ncol.legend = 1, 
+  ncol = 3,
+  interactive = FALSE,
+  combine.slices = 0
+)
+```
+
+
+```{r}
+cluster_names(fit_mhmm_2$model) <- c(
+  "Downward transition", "Upward transition", "Alternating"
+)
+```
+
+
+```{r}
+summary(fit_mhmm_2$model)
+```
+
+
+```{r}
+exp(fit_mhmm_2$model$coefficients)/rowSums(exp(fit_mhmm_2$model$coefficients))
+```
+
+### Stochastic process mining with Markovian models {#process}
+
+
+```{r, message=FALSE, warning=FALSE}
+seq_data <- import(paste0(URL, "1_moodleLAcourse/LMS_data_wide.xlsx"))
+seq_data_all <- seqdef(seq_data, var = 7:54 )
+```
+
+Sequence index plot for the learning management system logs
+```{r, fig.align='center', fig.dpi = 300, fig.width=5, fig.height=5.5, dev='png'}
+seqplot(seq_data_all, 
+  type = "I", ncol = 4, sortv = "from.start",
+  legend.prop = 0.2, cex.legend = 0.7, border = NA,
+  ylab = "Sequence (sorted)", xlab = "Time"
+)
+```
+
+```{r, message = FALSE}
+overalltransitions <- seqtrate(seq_data_all)
+overalltransitions
+```
+Process map for the overall process.
+
+```{r, fig.align='center', fig.dpi = 300, fig.width=6, fig.height=6}
+Labelx <- alphabet(seq_data_all) # get the labels to use them as nodes names.
+transitionsplot <- qgraph(
+  overalltransitions, cut = 0.15, minimum = 0.05, 
+  labels = Labelx, edge.labels = TRUE, edge.label.cex = 0.65, 
+  color = cpal(seq_data_all), curveAll = TRUE, 
+  theme = "colorblind", mar = c(4, 3, 4, 3)
+)
+```
+
+
+Process map for the overall process with initial probabilities
+```{r, fig.align='center', fig.dpi = 300, fig.width=6, fig.height=6}
+overallmodel <- build_mm(seq_data_all)
+
+overallplot <- qgraph(
+  overalltransitions, 
+  cut = 0.15, 
+  minimum = 0.05, 
+  labels = Labelx, 
+  mar = c(4, 3, 4, 3), 
+  edge.labels = TRUE, 
+  edge.label.cex = 0.65, 
+  color = cpal(seq_data_all), 
+  curveAll = TRUE, 
+  theme = "colorblind", 
+  pie = overallmodel$initial_probs
+)
+```
+
+ 
+
+```{r}
+set.seed(1)
+trans_probs <- simulate_transition_probs(12, 4, diag_c = 5)
+init_probs <- as.numeric(prop.table(table(seq_data_all[,1])[1:12]))
+init_probs <- replicate(4, init_probs, simplify = FALSE)
+
+builtseqLMS <- build_mmm(
+  seq_data_all,
+  transition_probs = trans_probs,
+  initial_probs = init_probs
+)
+
+fitLMS <- fit_model(
+  builtseqLMS, 
+  global_step = TRUE,
+  control_global = list(
+    maxtime = 3600, 
+    maxeval = 1e5,
+    algorithm = "NLOPT_GD_STOGO_RAND"),
+  local_step = TRUE,
+  threads = 16
+)
+
+fitLMS$global_results$message
+fitLMS$logLik
+```
+
+Extract transition probabilities of each cluster
+```{r }
+Clustertp1 <- fitLMS$model$transition_probs$`Cluster 1`
+Clustertp2 <- fitLMS$model$transition_probs$`Cluster 2`
+Clustertp3 <- fitLMS$model$transition_probs$`Cluster 3`
+Clustertp4 <- fitLMS$model$transition_probs$`Cluster 4`
+```
+
+Extract initial probabilities of each cluster
+```{r}
+Clusterinitp1 <- fitLMS$model$initial_probs$`Cluster 1`
+Clusterinitp2 <- fitLMS$model$initial_probs$`Cluster 2`
+Clusterinitp3 <- fitLMS$model$initial_probs$`Cluster 3`
+Clusterinitp4 <- fitLMS$model$initial_probs$`Cluster 4`
+```
+
+Process maps for each cluster
+```{r,fig.width=6, fig.height=5,  fig.align='center', fig.dpi = 300 }
+Labelx <- colnames(Clustertp1) # we need to get the labels
+
+Averagelayout <- averageLayout(
+  list(Clustertp1, Clustertp2, Clustertp3, Clustertp4)
+)
+## You can also try with this layout from the previous plot
+Overalllayout <- overallplot$layout 
+
+qgraph(
+  Clustertp1, cut = 0.15, minimum = 0.05 , labels = Labelx,
+  edge.labels = TRUE, edge.label.cex = 0.65, color = cpal(seq_data_all), 
+  layout = Averagelayout, pie = Clusterinitp1, curveAll = TRUE, 
+  theme = "colorblind", title = "Diverse"
+)
+
+qgraph(
+  Clustertp2, cut = 0.15, minimum = 0.05, labels = Labelx,
+  edge.labels = TRUE, edge.label.cex = 0.65, color = cpal(seq_data_all),  
+  layout = Averagelayout, pie = Clusterinitp2, curveAll = TRUE, 
+  theme = "colorblind", title = "Assignment-oriented"
+)
+
+qgraph(
+  Clustertp3, cut = 0.15, minimum = 0.05, labels = Labelx,
+  edge.labels = TRUE, edge.label.cex = 0.65, color = cpal(seq_data_all),  
+  layout = Averagelayout, pie = Clusterinitp3, curveAll = TRUE, 
+  theme = "colorblind", title = "Practical-oriented"
+)
+
+qgraph(
+  Clustertp4, cut = 0.15, minimum = 0.05 , labels = Labelx, 
+  edge.labels = TRUE, edge.label.cex = 0.65, color = cpal(seq_data_all),  
+  layout = Averagelayout, pie = Clusterinitp4, curveAll = TRUE, 
+  theme = "colorblind", title = "Group-centered"
+)
+```
+
+
+```{r}
+seq_high <- seq_data_all[seq_data$Achievementlevel4 <= 2,]
+seq_low <-  seq_data_all[seq_data$Achievementlevel4 > 2,]
+
+high_mm <- build_mm(seq_high)
+low_mm <- build_mm(seq_low)
+```
+
+Process maps for high achievers and low achievers using average layout
+```{r,fig.width=6, fig.height=2.5, fig.align='center', fig.dpi = 300}
+##extract transition probabilities of each cluster
+Highprobs <- high_mm$transition_probs
+Lowprobs <- low_mm$transition_probs
+
+##extract initial probabilities of each cluster
+Highinit <- high_mm$initial_probs
+Lowinit <- high_mm$initial_probs
+
+Averagelayout <- averageLayout(list(Highprobs, Lowprobs))
+
+Highplot <- qgraph(
+  Highprobs, cut = 0.15, minimum = 0.05, labels = Labelx,
+  edge.labels = TRUE, edge.label.cex = 0.65, 
+  color = cpal(seq_data_all), layout = Averagelayout, 
+  pie = Highinit, theme = "colorblind", title = "High achievers"
+)
+
+Lowplot <-  qgraph(
+  Lowprobs, cut=0.15, minimum = 0.05, labels = Labelx,
+  edge.labels = TRUE, edge.label.cex = 0.65, 
+  color = cpal(seq_data_all), layout = Averagelayout, 
+  pie = Lowinit, theme = "colorblind", title = "Low achievers"
+)
+```
+
+Difference between process maps of high achievers and low achievers using average layout
+```{r, fig.align='center', fig.dpi = 300}
+diffplot <- qgraph(
+  Lowprobs - Highprobs, cut = 0.15, minimum = 0.05, labels = Labelx,
+  edge.labels = TRUE, edge.label.cex = 0.65, layout = Averagelayout, 
+  color = cpal(seq_data_all), theme = "colorblind"
+)
+```

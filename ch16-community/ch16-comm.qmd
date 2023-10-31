@@ -1,0 +1,223 @@
+---
+title: "Community Detection in Learning Networks Using R"
+author: 
+   - name: "Ángel Hernández-García"
+   - name: "Carlos Cuenca-Enrique"
+   - name: "Adrienne Traxler"
+   - name: "Sonsoles López-Pernas"
+   - name: "Miguel Ángel Conde"
+   - name: "Mohammed Saqr"
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+---
+
+## Community detection in R: An annotated example using `igraph`
+
+Load libraries
+
+```{r, message = F, warning = F}
+library(igraph) 
+library(rio)
+```
+
+Import data
+```{r, warning = F}
+repo <- "https://github.com/lamethods/data/raw/main/10_snaProgramming/"
+ds.nodes <- import(paste0(repo,"hg_data_nodes.xlsx"))
+ds.edges <- import(paste0(repo,"hg_data_edges.xlsx"))
+ds <- graph_from_data_frame(d = ds.edges, directed = TRUE, vertices = ds.nodes)
+```
+
+Graph structure
+```{r}
+str(ds)
+```
+
+Inspect main graph attributes
+```{r}
+print(ds)
+```
+
+
+Graph of the Replies from the data set of [@Hernández-García_Suárez-Navas_2017] using the plot function
+
+```{r, fig.width= 12, fig.height = 12}
+set.seed(1)
+plot(ds)
+```
+
+
+Community detection example
+```{r}
+set.seed(1234)
+comm.ds <- cluster_infomap(ds)
+```
+
+```{r}
+str(comm.ds)
+```
+ 
+Communities emerging from the Replies data set using the Infomap community finding algorithm
+```{r,  fig.width=9, fig.height=9}
+plot(comm.ds, ds)
+```
+ 
+Visualization of the communities emerging from the simplified Replies data set using the Infomap community finding algorithm
+```{r, fig.width=7, fig.height=7}
+simple.ds <- simplify(ds, remove.multiple = TRUE, remove.loops = TRUE,
+                      edge.attr.comb = list(weight = "sum", "ignore"))
+simple.ds <- delete.vertices(simple.ds, which(degree(simple.ds) == 0))
+comm.simple.ds <- cluster_infomap(simple.ds)
+plot(comm.simple.ds, simple.ds)
+```
+
+Fine-tuned visualization of the simplified graph.
+```{r, fig.width=4, fig.height=4 }
+lo <- layout_with_fr(simple.ds, niter = 50000, 
+                     weights = E(simple.ds)$weight * 0.05)
+plot(comm.simple.ds,
+     simple.ds,
+     layout = lo,
+     vertex.size = V(simple.ds)$totalPosts * 0.025,
+     vertex.label = NA,
+     edge.arrow.size = 0.1
+)
+```
+
+Visualization of simplified graph with spinglass communities
+```{r, fig.width=4}
+set.seed(4321)
+comm.simple2.ds <- cluster_spinglass(simple.ds, gamma = 1.0)
+plot(comm.simple2.ds,
+     simple.ds,
+     layout = lo,
+     vertex.size = V(simple.ds)$totalPosts * 0.025,
+     vertex.color = membership(comm.simple2.ds),
+     vertex.label = NA,
+     edge.arrow.size = 0.1
+)
+```
+
+ 
+Network graph of the links between Infomap communities using the simplified version of the Replies data set.
+```{r, fig.width = 4}
+comms <- simplify(contract(simple.ds, membership(comm.simple.ds)))
+plot(comms,
+     vertex.size = 2.5 * sizes(comm.simple.ds),
+     vertex.label = 1:length(comm.simple.ds),
+     vertex.cex = 0.8,
+     edge.arrow.size = 0.1
+)
+```
+
+
+### Interactive visualization of communities in R
+
+
+#### `visNetwork`
+
+
+```{r}
+library(visNetwork)
+```
+
+
+Create dataframe for `visNetwork`.
+
+```{r}
+memberships <- as.data.frame(as.matrix(membership(comm.simple.ds)))
+colnames(memberships)[1]<- "group"
+memberships$id <- rownames(memberships)
+rownames(memberships) <- 1:nrow(memberships)
+```
+
+Show memberships
+```{r}
+head(memberships)
+```
+
+Extract nodes and edges
+```{r}
+simple.ds.nodes <- as_data_frame(simple.ds, what = "vertices")
+simple.ds.edges <- as_data_frame(simple.ds, what = "edges")
+```
+
+
+Reset row names
+```{r}
+rownames(simple.ds.nodes) <- 1:nrow(simple.ds.nodes)
+colnames(simple.ds.nodes)[1] <- "id"
+colnames(simple.ds.nodes)[2] <- "title"
+```
+
+
+Finally, we combine the node data set with the membership data set.
+```{r}
+vis.comm <- merge(simple.ds.nodes, y = memberships, by = "id", all.x = TRUE)
+```
+ 
+For visualization purposes, we add a column with the size of the nodes in the visualization.
+```{r}
+vis.comm$size <- vis.comm$totalPosts * 0.2
+```
+
+Graph visualization
+```{r }
+visNetwork(vis.comm, simple.ds.edges, width = "100%", height = "800px", 
+           main = "Interactive Communities") |>    
+  visLayout(randomSeed = 1234) |> 
+  visLegend(position = "right", main = "group") |> 
+  visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE, selectedBy = "group") |>  
+  visInteraction(hideEdgesOnDrag = TRUE, dragNodes = TRUE, dragView = TRUE, 
+                 zoomView = TRUE, navigationButtons = TRUE)
+```
+
+
+#### `networkD3`
+
+```{r}
+library(networkD3)
+```
+
+Converting from igraph object
+```{r, results = F}
+graph.d3 <- igraph_to_networkD3(simple.ds, group = membership(comm.simple.ds))
+```
+
+
+We add node sizes for improved visualization.
+```{r, results = F}
+graph.d3$nodes$size <- simple.ds.nodes$totalPosts * 0.2
+```
+
+Plot interactive visualization
+```{r }
+d3.comm <- forceNetwork(Links = graph.d3$links, Nodes = graph.d3$nodes, 
+                        Source = 'source', Target = 'target', 
+                        NodeID = 'name', Group = 'group',
+                        linkColour = "#afafaf", fontSize = 12, zoom = T, 
+                        legend = T, Nodesize = 3, opacity = 0.8, 
+                        charge = -25,  width = 800, height = 800)
+d3.comm
+```
+
+
+Interactive visualization fixed
+
+```{r, message = F, warning = F}
+library(htmlwidgets)
+```
+
+```{r, eval = F}
+htmlwidgets::onRender(d3.comm, jsCode = '
+  function (el, x) {
+    d3.select("svg").append("g").attr("id", "legend-layer");
+    var legend_layer = d3.select("#legend-layer");
+    d3.selectAll(".legend")
+      .each(function() { legend_layer.append(() => this); });
+  }
+')
+```
+

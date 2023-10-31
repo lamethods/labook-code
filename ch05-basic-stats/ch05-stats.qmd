@@ -1,0 +1,388 @@
+---
+title: "Introductory Statistics with R for Educational Researchers"
+author: 
+   - name: "Santtu Tikka"
+   - name: "Juho Kopra"
+   - name: "Merja Heinäniemi"
+   - name: "Sonsoles López-Pernas"
+   - name: "Mohammed Saqr"
+
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+---
+
+
+```{r}
+#| label: setup
+#| include: false
+
+knitr::opts_chunk$set(echo = TRUE)
+suppressPackageStartupMessages(library("see"))
+suppressPackageStartupMessages(library("rio"))
+suppressPackageStartupMessages(library("car"))
+suppressPackageStartupMessages(library("dplyr"))
+suppressPackageStartupMessages(library("tidyr"))
+suppressPackageStartupMessages(library("broom"))
+suppressPackageStartupMessages(library("report"))
+suppressPackageStartupMessages(library("correlation"))
+suppressPackageStartupMessages(library("performance"))
+options(dplyr.summarise.inform = FALSE)
+options(width = 84)
+```
+
+## Descriptive statistics
+
+Installing dependencies
+```{r}
+#| eval: false
+#| echo: true
+install.packages(
+  c("car", "rio", "see", "dplyr", "tidyr", 
+    "broom", "report", "correlation", "performance")
+)
+```
+
+Import libraries
+```{r}
+library("rio")
+library("dplyr")
+library("tidyr")
+```
+
+Import data and add a new column to the `Results`
+```{r}
+url <- "https://github.com/lamethods/data/raw/main/1_moodleLAcourse/"
+events <- import(paste0(url, "Events.xlsx"), setclass = "tibble")
+demographics <- import(paste0(url, "Demographics.xlsx"), setclass = "tibble")
+results <- import(paste0(url, "Results.xlsx"), setclass = "tibble") |> 
+  mutate(
+    AchievingGroup = factor(
+      case_when(
+        ntile(Final_grade, 2) == 1 ~ "Low achiever",
+        ntile(Final_grade, 2) == 2 ~ "High achiever"
+      )
+    )
+  )
+```
+Next, we summarize the student's engagement based on their Moodle activity into three groups: Low activity, Moderate activity and High Activity.
+```{r}
+events_summary <- events |>
+  group_by(user) |>
+  tally() |>
+  rename(Frequency.Total = n) |>
+  mutate(
+    ActivityGroup = factor(
+      case_when(
+        ntile(Frequency.Total, 3) == 1 ~ "Low activity",
+        ntile(Frequency.Total, 3) == 2 ~ "Moderate activity",
+        ntile(Frequency.Total, 3) == 3 ~ "High activity"
+      )
+    )
+  )
+```
+
+We also count the different types of Moodle events.
+
+```{r}
+events_types <- events |>
+  group_by(user, Action) |>
+  count(Action) |> 
+  pivot_wider(
+    names_from = "Action", 
+    names_prefix = "Frequency.",
+    values_from = "n",
+    values_fill = 0
+  )
+```
+
+Finally, we combine the data.
+```{r}
+all_combined <- demographics |>
+  left_join(events_types, by = "user") |> 
+  left_join(events_summary, by = "user") |> 
+  left_join(results, by = "user")
+```
+
+### Measures of central tendency
+
+Compute the mean of the grades and number of ecents
+
+```{r}
+#| label: mean
+all_combined |> 
+  summarise(
+    mean_grade = mean(Final_grade),
+    mean_total = mean(Frequency.Total)
+  )
+```
+
+Compute the median of the grades and number of ecents
+```{r}
+#| label: median
+all_combined |> 
+  summarise(
+    median_grade = median(Final_grade),
+    median_total = median(Frequency.Total)
+  )
+```
+
+Create function for mode
+```{r}
+#| label: modefun
+stat_mode <- function(x) {
+  u <- unique(x)
+  u[which.max(tabulate(match(x, u)))]
+}
+```
+
+Compute the mode of the grades and number of ecents
+```{r}
+#| label: modefunexample
+all_combined |>
+  summarise(
+    mode_gender = stat_mode(Gender),
+    mode_location = stat_mode(Location)
+  )
+```
+
+Frequency of each categories for nominal variables
+```{r}
+#| label: frequencies
+table(all_combined$Gender)
+table(all_combined$Location)
+```
+
+### Measures of dispersion
+
+
+Variance, standard deviation and IQR of grades
+```{r}
+#| label: varsd
+all_combined |>
+  summarise(
+    var_grade = var(Final_grade),
+    sd_grade = sd(Final_grade),
+    iqr_grade = IQR(Final_grade)
+  )
+```
+
+### Covariance and Correlation 
+
+Covariance and Correlation between grades and number of events
+
+```{r}
+all_combined |>
+  summarise(
+    cov_grade_total = cov(Final_grade, Frequency.Total),
+    cor_grade_total = cor(Final_grade, Frequency.Total)
+  )
+```
+
+### Other common statistics
+
+Range, minimum, maximum of final grade
+```{r}
+#| label: extremes
+all_combined |>
+  reframe(
+    range_grade = range(Final_grade)
+  )
+all_combined |>
+  summarise(
+    min = min(Final_grade),
+    max = max(Final_grade)
+  )
+```
+
+Summary of grades
+```{r}
+#| label: summary
+results |> 
+  select(Grade.SNA_1:Grade.Group_self) |> 
+  summary()
+```
+
+## Statistical hypothesis testing
+ 
+
+### Student's t-test
+
+
+#### One-sample t-test
+
+Compare number of events against reference value
+```{r}
+#| label: onesamplettest
+ttest_one <- t.test(Frequency.Total ~ 1, data = all_combined, mu = 600)
+ttest_one
+```
+
+```{r}
+report(ttest_one)
+```
+
+#### Two-sample t-test
+
+Compare number of events by achievement group
+```{r}
+ttest_two <- t.test(Frequency.Total ~ AchievingGroup, data = all_combined)
+ttest_two
+```
+
+```{r}
+report(ttest_two)
+```
+
+#### Paired two-sample t-test
+
+Compare number of events by achievement group using a paired samples test
+```{r}
+ttest_paired <- t.test(
+  Frequency.Total ~ AchievingGroup, data = all_combined, paired = TRUE
+)
+ttest_paired
+```
+
+
+```{r}
+report(ttest_paired)
+```
+
+### Chi-squared test
+
+Compare proportion of activity group vs. achievement group
+```{r}
+tab <- table(all_combined$ActivityGroup, all_combined$AchievingGroup)
+tab
+```
+
+```{r}
+Xsq_test <- chisq.test(tab)
+Xsq_test
+```
+
+```{r}
+all(Xsq_test$expected >= 1)
+mean(Xsq_test$expected >= 5) >= 0.80
+```
+
+### Analysis of variance
+
+Compare final grade among activity group (there are more than 2 so we need ANOVA instead of t-test)
+```{r}
+#| label: anova
+fit <- aov(Final_grade ~ ActivityGroup, data = all_combined)
+summary(fit)
+```
+
+```{r}
+report(fit)
+```
+
+### Levene's test
+Final grade vs. Activity group
+```{r}
+library("car")
+leveneTest(Final_grade ~ ActivityGroup, data = all_combined)
+```
+
+### Shapiro-Wilk test 
+
+```{r}
+library("broom")
+all_combined |> 
+  ## Performs the computations in each activity group
+  group_by(ActivityGroup) |> 
+  ## Apply a function in each group
+  group_modify(~{
+    ## Apply the Shapiro test in each group and create tidy output
+    shapiro.test(.$Final_grade) |> 
+      tidy()
+  }) |> 
+  ## Selection of variables to keep in the output
+  select(ActivityGroup, statistic, p.value)
+```
+
+## Correlation {#sec-correlation}
+
+```{r}
+library("correlation")
+```
+
+```{r}
+corrs <- correlation(
+  all_combined, 
+  select = c("Frequency.Total", "Grade.Theory", "Final_grade")
+)
+corrs
+```
+
+```{r}
+summary(corrs)
+```
+
+```{r}
+library("see")
+corrs |>
+  ## Also include redundant correlations
+  summary(redundant = TRUE) |>
+  plot()
+```
+
+## Linear regression
+
+Predict final grade based on frequencies of events 
+```{r}
+fit <- lm(
+  Final_grade ~ Frequency.Applications + Frequency.Assignment +
+    Frequency.La_types,
+  data = all_combined
+)
+summary(fit)
+```
+
+```{r}
+report(fit)
+```
+
+Draw the quantiles of the residuals and the theoretical quantiles
+```{r}
+qqnorm(resid(fit))
+```
+Add a line through the theoretical quantiles
+```{r}
+qqline(resid(fit))
+```
+
+```{r}
+library("performance")
+```
+
+```{r}
+check_model(fit, theme = see::theme_lucid(base_size = 10))
+```
+
+## Logistic regression
+Predict achiebement group based on frequencies of events 
+
+```{r}
+fit_logistic <- glm(
+  ## Use the I() function to construct a binary response in the formula
+  I(AchievingGroup == "High achiever") ~ Frequency.Applications + 
+    Frequency.Assignment + Frequency.La_types,
+  data = all_combined,
+  ## Our response is binary, so we use the binomial family with logit link
+  family = binomial(link = "logit")
+)
+summary(fit_logistic)
+```
+
+```{r}
+report(fit_logistic)
+```
+
+```{r}
+check_model(fit_logistic)
+```

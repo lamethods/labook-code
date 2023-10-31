@@ -1,0 +1,240 @@
+---
+title: "Social Network Analysis: A primer, a guide and a tutorial in R"
+author: 
+   - name: "Mohammed Saqr"
+   - name: "Sonsoles López-Pernas"
+   - name: "Miguel Ángel Conde"
+   - name: "Ángel Hernández-García"
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+---
+
+## Network analysis in R
+
+
+**Example 1**
+
+Load libraries
+```{r, message = F}
+library(igraph)
+library(rio)
+```
+
+Load data
+
+```{r}
+SNA_example1 <- 
+  import("https://github.com/lamethods/data/raw/main/8_examples/SNA_example1.xlsx")
+```
+
+Create network
+```{r}
+Net <- graph_from_data_frame(SNA_example1)
+print(Net)
+```
+
+Plot network
+```{r}
+plot(Net)
+```
+
+
+**Example 2**
+
+
+```{r}
+net_edges <- 
+  import("https://github.com/lamethods/data/raw/main/6_snaMOOC/DLT1%20Edgelist.csv")
+net_nodes <- 
+  import("https://github.com/lamethods/data/raw/main/6_snaMOOC/DLT1%20Nodes.csv")
+```
+
+
+```{r}
+DLT1 <- graph_from_data_frame(d=net_edges, directed = TRUE, vertices = net_nodes)
+```
+
+
+```{r}
+print(DLT1)
+```
+
+```{r}
+plot(DLT1,  layout = layout.fruchterman.reingold, 
+     vertex.size = 5, vertex.label.cex = 2)
+```
+
+### Graph level analysis
+
+Number of vertices
+```{r}
+vcount(DLT1)
+```
+
+Number of edges
+```{r}
+ecount(DLT1)
+```
+
+Average number of interactions
+```{r}
+ecount(DLT1) / vcount(DLT1)
+```
+
+Density
+```{r}
+graph.density(DLT1)  
+```
+
+Density of simplified network
+```{r}
+graph.density(simplify(DLT1))
+```
+
+Reciprocity
+```{r}
+reciprocity(DLT1)
+```
+
+Number of mutual interactions (reciprocated between a pair of vertices),  number of asymmetric interactions (interactions that are not reciprocated), and  number of non-connected pairs
+```{r}
+dyad.census(DLT1) 
+```
+
+Transitivity
+
+```{r, eval = F}
+transitivity(DLT1)
+```
+
+Numbers of triangles and their different types. T
+
+```{r}
+triad_census(DLT1) 
+```
+
+
+Mean of centrality measures
+```{r}
+mean(degree(DLT1, mode = "total"))
+mean(degree(DLT1, mode = "in"))
+mean(degree(DLT1, mode = "out"))
+median(degree(DLT1, mode = "total"))
+median(degree(DLT1, mode = "in"))
+median(degree(DLT1, mode = "out"))
+```
+
+SD of centrality measures
+```{r}
+sd(degree(DLT1, mode = "total")) 
+sd(degree(DLT1, mode = "in")) 
+sd(degree(DLT1, mode = "out"))
+```
+
+Centralization degree
+```{r}
+centralization.degree(simplify(DLT1),  mode =  "all", loops = FALSE)$centralization 
+centralization.degree(simplify(DLT1),  mode = "in", loops = FALSE)$centralization   
+centralization.degree(simplify(DLT1),  mode =  "out", loops = FALSE)$centralization  
+```
+
+Degree distribution
+```{r}
+hist(degree(DLT1, mode = "in"), breaks = 100)
+hist(degree(DLT1, mode = "out"), breaks = 100)
+```
+
+### Network connectivity
+
+How connected the group is
+```{r}
+is.connected(DLT1)
+Components <- components(DLT1)
+print(Components)
+```
+
+Network components
+```{r}
+Decomposed <- decompose(DLT1)
+Decomposed[[1]]
+```
+
+Diameter, average distance between vertices,  and efficiency
+```{r}
+diameter(DLT1) ## 8
+mean_distance(DLT1) ## 3.030694
+global_efficiency(DLT1) ## 0.1961034
+```
+
+### Network operations
+
+Simplify network 
+```{r}
+V(DLT1)$weight <- 1
+E(DLT1)$weight <- 1
+simple.DLT1 <- simplify(DLT1, remove.multiple = TRUE, remove.loops = TRUE, 
+                        edge.attr.comb = list(weight = "sum", "ignore"))
+```
+
+Subset network
+```{r}
+k <- subgraph.edges(DLT1, 
+    eids = which(E(DLT1)$'Discussion Category' == 'Curriculum & Instruction'))
+NC_network <- induced_subgraph(DLT1, vids = which(V(DLT1)$location == "NC"))
+```
+
+### Individual vertex measures (centrality measures)
+
+
+Calculate individual degree
+```{r}
+InDegree  <- degree(DLT1, mode = "in")
+OutDegree <- degree(DLT1, mode = "out")
+Degree    <- degree(DLT1, mode = "total")
+Degree_df <- tibble::tibble(name = V(DLT1)$name, InDegree, OutDegree, Degree)
+print(Degree_df)
+```
+
+Calculate individual strength
+```{r}
+InStrength  <- graph.strength(DLT1, mode = "in")
+OutStrength <- graph.strength(DLT1,mode = "out")
+Strength    <- graph.strength(DLT1, mode = "total")
+Strength_df <- tibble::tibble(name=V(DLT1)$name,InStrength,OutStrength,Strength)
+print(Strength_df)
+```
+
+Calculate closeess and betweenness
+```{r}
+Closeness_In <- closeness(DLT1, mode = c("in"))
+Closeness_Out <- closeness(DLT1, mode = c("out"))
+Closeness_total <- closeness(DLT1, mode = c("total"))
+
+Betweenness <- betweenness(simple.DLT1, directed = FALSE)
+Eigen <- eigen_centrality(simple.DLT1, directed = FALSE)$vector
+Pagerank <- page.rank(DLT1, directed = FALSE)$vector
+```
+
+Calculate diffusion
+```{r, message = F}
+library(centiserve)
+Diffusion.degree_in  <- diffusion.degree(DLT1, mode = c("in"))
+Diffusion.degree_out  <- diffusion.degree(DLT1, mode = c("out"))
+Diffusion.degree  <- diffusion.degree(DLT1, mode = c("all"))
+```
+
+Calculate coreness
+```{r}
+Coreness <- coreness(DLT1)
+Cross_clique_connectivity <- crossclique(DLT1)
+```
+
+Combine centralities together in the same dataframe
+```{r}
+Centdf  <- tibble::tibble(name=V(DLT1)$name,Closeness_total,Betweenness,
+Eigen,Pagerank,Diffusion.degree,Coreness,Cross_clique_connectivity)
+print(Centdf)
+```
+

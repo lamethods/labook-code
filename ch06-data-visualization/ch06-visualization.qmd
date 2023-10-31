@@ -1,0 +1,573 @@
+---
+title: "Introductory Statistics with R for Educational Researchers"
+author: 
+   - name: "Santtu Tikka"
+   - name: "Juho Kopra"
+   - name: "Merja Heinäniemi"
+   - name: "Sonsoles López-Pernas"
+   - name: "Mohammed Saqr"
+
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+---
+
+## Creating your first plot
+
+### Installing ggplot2
+
+Installing the `ggplot2` library. 
+
+```{r, message = FALSE, error = FALSE, warning = FALSE, include = FALSE}
+install.packages("ggplot2")
+```
+
+To import `ggplot2` we just need to use the `library` command and specify the `ggplot2` library:
+
+```{r, message = FALSE, error = FALSE, warning = FALSE}
+library(ggplot2)
+```
+
+### Downloading the data
+
+Next, we need to import the data that we are going to plot. For this chapter, we are using synthetic data from a blended course on learning analytics. For more details about this dataset, refer to Chapter X in this book. The data is in Excel format. We can use the library `rio` since it makes it easy to read data in several formats. We first install the library:
+
+```{r, message = FALSE, error = FALSE, warning = FALSE, results = F}
+install.packages("rio")
+```
+
+And import it so we can use its functions:
+
+```{r, message = FALSE, error = FALSE, warning = FALSE}
+library(rio)
+```
+
+Now we can download the data using the `import` function from `rio` and assign it to a variable named `df` (short for dataframe).
+
+```{r}
+demo_url = "https://github.com/sonsoleslp/labook-data/raw/main/1_moodleLAcourse/AllCombined.xlsx"
+df <- import(demo_url)
+```
+
+We can use the `head` command to get an idea of what the dataset looks like.
+
+```{r, eval = F }
+head(df)
+```
+
+
+### Creating the aesthetic mapping
+
+Now that we have our data, we can pass it on to `ggplot2` as follows:
+
+```{r, fig.align = 'center', fig.cap = "Empty plot", fig.width = 4, fig.height = 2}
+#| label: fig-empty
+ggplot(df)
+```
+
+
+### Add the geometry component
+
+```{r, fig.align = 'center', fig.cap = "Empty plot with AchievingGroup in x-axis labels", fig.width = 4, fig.height = 2}
+#| label: fig-xaxis
+ggplot(df, aes(x = AchievingGroup)) 
+```
+
+We add the type of chart
+```{r, fig.align = 'center', fig.cap = "Basic bar plot showing students by achievement group", fig.width = 5, fig.height = 3}
+#| label: fig-studentsbyachievementgroup
+ggplot(df, aes(x = AchievingGroup)) + geom_bar() 
+```
+
+Convert the `AchievingGroup` to a factor.
+```{r}
+df$AchievingGroup = factor(df$AchievingGroup,
+                           levels = c("Low achiever", "High achiever"))
+```
+
+
+```{r, fig.align = 'center', fig.cap = "Basic bar plot showing students by achievement group after transforming the x-axis variable into a factor", fig.width = 5, fig.height = 3}
+#| label: fig-studentsbyachievmentordered
+ggplot(df, aes(x = AchievingGroup)) + geom_bar() 
+```
+
+### Adding the color scale
+
+Color by `ActivityGroup` using the `fill `property
+```{r, fig.align = 'center', fig.cap = "Basic bar plot showing students' activity level by achievement group  and colored by activity level", fig.width = 5, fig.height = 3}
+#| label: fig-colorby
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + geom_bar()
+```
+
+
+```{r}
+df$ActivityGroup = factor(df$ActivityGroup,
+                          levels = c("Low activity", "Moderate activity", "High activity"))
+```
+
+If we generate the plot again, we see now that the legend is in the right order:
+
+```{r, fig.align = 'center', fig.cap = "Basic bar plot showing students' activity level by achievement group  and colored by activity level after ordering the legend", fig.width = 5, fig.height = 3}
+#| label: fig-colorbyorder1
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + geom_bar()
+```
+
+Reverse order for the bars
+```{r, fig.align = 'center', fig.cap = "Basic bar plot showing students' activity level by achievement group  and colored by activity level after ordering the stacks ", fig.width = 5, fig.height = 3}
+#| label: fig-colorbyorder2
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE))
+```
+
+Change bar colors
+```{r, fig.align = 'center', fig.cap = "Bar plot showing students' activity level by achievement group with sequential color scale", fig.width = 5, fig.height = 3}
+#| label: fig-brewer
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) + 
+  scale_fill_brewer(palette = 15)
+```
+
+Add a manual color scale
+```{r, fig.align = 'center', fig.cap = "Bar plot showing students' activity level by achievement group with manual color scale", fig.width = 5, fig.height = 3}
+#| label: fig-scalemanual
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) + 
+  scale_fill_manual(values = c("#ef6461", "#7AE7C7", "#8E518D"))  
+```
+
+Use viridis scale
+```{r, fig.align = 'center', fig.cap = "Bar plot showing students' activity level by achievement group with viridis color scale", fig.width = 5, fig.height = 3}
+#| label: fig-viridis
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) + 
+  scale_fill_viridis_d() 
+```
+
+Reverse viridis scale
+```{r, fig.align = 'center', fig.cap = "Bar plot showing students' activity level by achievement group with viridis color scale", fig.width = 5, fig.height = 3}
+#| label: fig-viridis-direction
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) + 
+  scale_fill_viridis_d(direction = -1) 
+```
+
+### Working with themes
+
+Using themes
+```{r, message = FALSE, eval = FALSE}
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) + 
+  scale_fill_viridis_d(direction = -1) + theme_dark()
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) + 
+  scale_fill_viridis_d(direction = -1) + theme_classic()
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) +  
+  scale_fill_viridis_d(direction = -1) + theme_void()
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) +  
+  scale_fill_viridis_d(direction = -1) + theme_minimal()
+```
+
+Set default theme
+```{r}
+theme_set(theme_minimal())
+```
+
+Notice how now we get `theme_minimal` even when we do not specify it in our code:
+
+```{r, fig.align = 'center', fig.cap = "Bar plot with theme `minimal` by default", fig.width = 5, fig.height = 3}
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) + 
+  scale_fill_viridis_d(direction = -1)
+```
+
+### Changing the axis ticks
+
+Chabge axis ticks
+```{r }
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) + 
+  scale_fill_viridis_d(direction = -1) + 
+  scale_y_continuous(n.breaks = 15)
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) + 
+  scale_fill_viridis_d(direction = -1) + 
+  scale_y_continuous(n.breaks = 3)
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) + 
+  scale_fill_viridis_d(direction = -1) + 
+  scale_y_continuous(n.breaks = 7)
+```
+
+
+### Titles and labels
+
+Add y-axis label using `ylab`:
+```{r, fig.align = 'center', fig.cap = "Bar plot with y-axis label", fig.width = 5, fig.height = 3}
+#| label: fig-seven
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) +  
+  scale_fill_viridis_d(direction = -1)  +
+  scale_y_continuous(n.breaks = 7) + 
+  ylab("Number of students") 
+```
+
+We do the same for the x-axis using `xlab`, and for the legend using `labs`:
+
+```{r, fig.align = 'center', fig.cap = "Bar plot with all labels", fig.width = 5, fig.height = 3}
+#| label: fig-seven2
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) +  
+  scale_fill_viridis_d(direction = -1)  +
+  scale_y_continuous(n.breaks = 7) + 
+  ylab("Number of students") +
+  xlab("Achievement group") + 
+  labs(fill = "Activity level")
+```
+
+Add overall title with  `ggtitle`
+```{r, fig.align = 'center', fig.cap = "Bar plot with title", fig.width = 5, fig.height = 3}
+#| label: fig-titles
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) + 
+  scale_fill_viridis_d(direction = -1)  +
+  scale_y_continuous(n.breaks = 7) + 
+  ylab("Number of students") +
+  xlab("Achievement group") + 
+  labs(fill = "Activity level") +
+  ggtitle("Activity level by achievement group") 
+```
+
+### Other cosmetic modifications
+
+Mosify legend position and font size and type.
+
+```{r, fig.align = 'center', fig.cap = "Bar plot with theme modifications", fig.width = 5, fig.height = 4}
+#| label: fig-legend
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) + 
+  scale_fill_viridis_d(direction = -1) +
+  scale_y_continuous(n.breaks = 7) + 
+  ylab("Number of students") +
+  xlab("Achievement group") + 
+  labs(fill = "Activity level") +
+  ggtitle("Activity level by achievement group") + 
+  theme(legend.position = "bottom", 
+        axis.title = element_text(size = 12), 
+        plot.title = element_text(size = 15, face = "bold"))
+```
+
+### Saving the plot
+
+Save plot
+```{r}
+myplot <- ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) + 
+  scale_fill_viridis_d(direction = -1) +
+  scale_y_continuous(n.breaks = 7) + 
+  ylab("Number of students") +
+  xlab("Achievement group") + 
+  labs(fill = "Activity level") + 
+  ggtitle("Activity level by achievement group") + 
+  theme(legend.position = "bottom", axis.title = element_text(size = 12), 
+        plot.title = element_text(size = 15, face = "bold"))
+ggsave("bar.png", myplot, width = 10000, height = 5000, units = "px", dpi = 900)
+```
+
+
+## Types of plots
+
+
+### Bar plot
+
+
+```{r, fig.align = 'center', fig.cap = "Basic bar plot of students by achievement group", fig.width = 5, fig.height = 3}
+#| label: fig-barr
+ggplot(df, aes(x = AchievingGroup)) +  geom_bar(position = position_stack(reverse = TRUE)) 
+```
+
+
+```{r, fig.align = 'center', fig.cap = "Basic bar plot of students by achievement group filled by activity level", fig.width = 5, fig.height = 3}
+#| label: fig-filled
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  scale_fill_viridis_d(direction = -1) + 
+  geom_bar(position = position_stack(reverse = TRUE)) 
+```
+
+
+```{r, fig.align = 'center', fig.cap = "Basic bar plot of students by achievement group filled by activity level with position dodge instead of stacked", fig.width = 5, fig.height = 3}
+#| label: fig-dodge
+ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup)) + 
+  scale_fill_viridis_d(direction = -1) + geom_bar(position = "dodge") 
+```
+
+
+### Histogram
+
+
+
+```{r}
+head(df)
+```
+
+
+```{r, fig.align = 'center', fig.cap = "Histogram of students' course page views", warning = FALSE, message = FALSE, fig.width = 5, fig.height = 3}
+#| label: fig-histogram
+ggplot(df, mapping = aes(x = Frequency.Total)) + geom_histogram()
+```
+
+
+```{r, fig.align = 'center', fig.cap = "Histogram of students' course page view with 50 bins", fig.width = 5, fig.height = 3}
+#| label: fig-histogram10
+ggplot(df, mapping = aes(x = Frequency.Total)) + 
+  geom_histogram(bins = 50)
+```
+
+
+```{r, fig.align = 'center', fig.cap = "Histogram of students' course page view with color, fill and linewidth", fig.width = 5, fig.height = 3}
+#| label: fig-histogrampink
+ggplot(df, mapping = aes(x = Frequency.Total)) + 
+  geom_histogram(bins = 20,  fill = "deeppink" ) +  
+  scale_x_continuous(n.breaks = 10) 
+
+```
+
+
+### Line plot
+
+Import new data
+```{r}
+ev_url <- "https://github.com/sonsoleslp/labook-data/raw/main/1_moodleLAcourse/Events.xlsx"
+events <- import(ev_url)
+```
+
+Preview of data
+```{r, eval = F}
+head(events)
+```
+
+
+```{r, fig.align = 'center', fig.cap = "Line plot of number of events per day", fig.width = 5, fig.height = 3}
+ggplot(events, aes(x = as.Date(timecreated) )) + geom_line(stat = "count")
+```
+
+
+```{r, fig.align = 'center', fig.cap = "Line plot of number of events per day with color, linewidth, and custom labels", fig.width = 5, fig.height = 3}
+ggplot(events, aes(x = as.Date(timecreated) )) + 
+  geom_line(stat = "count", color = "turquoise", linewidth = 2) + 
+  xlab ("Date") + ylab("Number of events")
+```
+
+
+```{r, fig.align = 'center', fig.cap = "Line plot of number of events per hour with points every hour", fig.width = 5, fig.height = 3}
+ggplot(events, aes(x = as.Date(timecreated) )) + 
+  geom_line(stat = "count", color = "turquoise", linewidth = 1.5)  + 
+  geom_point(stat = "count",  color = "purple", size = 2, stroke = 1)  + 
+  xlab ("Date")  + 
+  ylab("Number of events")
+```
+
+Install dplry
+```{r, message = FALSE, error = FALSE, warning = FALSE, results = F}
+install.packages("dplyr")
+```
+
+Then, we import it as usual:
+
+```{r, message = FALSE, error = FALSE, warning = FALSE}
+library(dplyr)
+```
+
+We can now filter the data and pass it on to `ggplot2`:
+
+```{r, fig.align = 'center', fig.cap = "Line plot of number of events per date for a single student", fig.width = 5, fig.height = 3}
+#| label: fig-lineplotdotssinglestudent
+events |> filter(user == "9d744e5bf") |> 
+  ggplot(aes(x = as.Date(timecreated) )) + 
+  geom_line(stat = "count", color = "turquoise", linewidth = 2)  + 
+  geom_point(stat = "count",  color = "purple", size = 2, stroke = 1)  + 
+  xlab ("Date")  + 
+  ylab("Number of events")
+```
+
+### Jitter plots
+
+
+```{r,   fig.align = 'center', out.width = '4in', fig.cap = "Jitter plot of number of events per achievement group using `geom_point`"}
+ggplot(df, aes(x = AchievingGroup, y = Frequency.Total)) + 
+  geom_point() +   
+  xlab("Achieving group") + 
+  ylab("Number of events") +
+  theme(legend.position = "bottom", 
+        legend.text = element_text(size = 7), 
+        legend.title = element_blank())
+```
+
+
+```{r, fig.align = 'center', out.width = '4in', fig.cap = "Jitter plot of number of events per achievement group using `geom_jitter`"}
+ggplot(df, aes(x = AchievingGroup, y = Frequency.Total)) + 
+  geom_jitter() + 
+  xlab("Achieving group") + 
+  ylab("Number of events") +
+  theme(legend.position = "bottom", 
+        legend.text = element_text(size = 7), 
+        legend.title = element_blank())
+```
+
+
+### Box plot
+
+```{r,     fig.align = 'center', out.width = '4in', fig.cap = "Box plot of activity per achievement group"}
+ggplot(df, aes(x = AchievingGroup, y = Frequency.Total)) + geom_boxplot() + 
+  xlab("Achieving group") + ylab("Number of events") 
+```
+
+
+### Violin plot
+
+```{r,  fig.align = 'center', out.width = '4in', fig.cap = "Violin plot of total activity per achievement group"}
+ggplot(df, aes(x = AchievingGroup, y = Frequency.Total)) + geom_violin() + 
+  xlab("Achieving group") + ylab("Number of events") 
+```
+
+### Scatter plots
+
+```{r,  fig.width = 5, fig.height = 3,  fig.align = 'center', fig.cap = "Scatter plot of number of events vs. final grade", out.width = '4in'}
+ggplot(df, aes(x = Frequency.Total, y = Final_grade)) + 
+  geom_point() + 
+  ylab("Final grade") + xlab("Number of events") 
+```
+
+```{r,  fig.width = 5, fig.height = 3,  fig.align = 'center', fig.cap = "Scatter plot of number of events vs. final grade colored by achievement group"}
+ggplot(df, aes(x = Frequency.Total, y = Final_grade, color = AchievingGroup)) + 
+  geom_point() + 
+  ylab("Final grade") + xlab("Number of events") +
+  labs(color = "Achievement")
+
+```
+
+```{r,  fig.width = 5, fig.height = 3,  fig.align = 'center', fig.cap = "Scatter plot of number of events vs. final grade colored by achievement group and sized by frequency of group work"}
+ggplot(df, aes(x = Frequency.Total, y = Final_grade, 
+               fill = AchievingGroup, size = Frequency.Group_work)) +
+  geom_point(color = "black", pch = 21) + 
+  scale_size_continuous(range = c(1, 7)) +
+  ylab("Final grade") + xlab("Number of events") +
+  labs(size = "Group work", fill = "Achievement")
+```
+
+## Advanced features
+
+### Plot grids
+
+
+```{r, fig.align = 'center', fig.cap = "Multiple series line plot", fig.width = 9, fig.height = 5}
+ggplot(events, aes(x = as.Date(timecreated), color = Action )) + 
+  scale_fill_viridis_d() +  
+  geom_line(stat = "count") +
+  xlab("Date") + 
+  ylab("Number of events")
+```
+
+
+```{r, fig.align = 'center', fig.cap = "Grid of multiple plots", fig.width = 9, fig.height = 5.5}
+ggplot(events, aes(x = as.Date(timecreated))) +
+  geom_area(stat = "count", fill = "turquoise", color = "black") + 
+  facet_wrap("Action") +  
+  xlab("Date") + 
+  ylab("Number of events")
+```
+
+### Combining multiple plots
+
+```{r, message = FALSE, error = FALSE, warning = FALSE, eval = FALSE}
+install.packages("patchwork")
+```
+
+We import the `patchwork` library:
+
+```{r, message = FALSE, error = FALSE, warning = FALSE}
+library(patchwork)
+```
+
+Create plots
+```{r}
+p1 <- ggplot(df, aes(x = Frequency.Total, y = Final_grade)) + 
+  geom_point() + ylab("Grade") + 
+  xlab("Total number of events")
+
+p2 <- ggplot(df, aes(x = AchievingGroup, fill = ActivityGroup )) + geom_bar(position = position_fill(reverse = T)) + 
+  scale_fill_viridis_d(direction = -1) + 
+  xlab("Achievement group") + 
+  ylab("Number of events") + 
+  labs(fill = "Activity level")
+p3 <- ggplot(events, aes(x = as.Date(timecreated) )) + 
+  geom_line(stat = "count", color = "turquoise", linewidth = 1.5)  + 
+  geom_point(stat = "count",  color = "purple", size = 2, stroke = 1)  + 
+  xlab ("Date")  + 
+  ylab("Number of events")
+```
+
+Combine them horizonally
+```{r, fig.align = 'center', fig.cap = "Multiple plots stacked horizontally", fig.width = 12, fig.height = 3}
+#| label: fig-patchworkhorizontal
+p1 + p2 + p3
+```
+
+Combine them vertically
+
+```{r, fig.align = 'center', fig.cap = "Multiple plots stacked vertically", fig.width = 6, fig.height = 8.5, out.width = "3.8in"}
+#| label: fig-patchworkvertical
+p1 / p2 / p3
+```
+
+Mix positions
+```{r, fig.align = 'center', fig.cap = "Multiple plots in a grid", fig.width = 9, fig.height = 5, out.width= '5.5in'}
+#| label: fig-patchworkcombined
+(p1 + p2) / ( p3 + plot_spacer())
+```
+
+
+## Creating tables with `gt`
+
+Install `gt` package
+```{r, message = FALSE, error = FALSE, warning = FALSE, include = FALSE}
+if (!require("gt")) install.packages("gt")
+```
+
+Import `gt`
+```{r, message = FALSE, error = FALSE, warning = FALSE}
+library(gt)
+```
+
+Create summary dataframe
+```{r}
+events |> 
+  group_by(user, Action) |> 
+  count() |> 
+  group_by(Action) |>
+  summarize(Mean = mean(n), SD = sd(n))
+```
+
+Display it as table with `gt`
+```{r}
+events |> 
+  group_by(user, Action) |> 
+  count() |> 
+  group_by(Action) |>
+  summarize(Mean = mean(n), SD = sd(n)) |>
+  gt()
+```
+
+Add formatting
+```{r}
+events |> 
+  group_by(user, Action) |> 
+  count() |> 
+  group_by(Action) |>
+  summarize(Mean = mean(n), SD = sd(n)) |>
+  gt() |> 
+  fmt_number(decimals = 2, columns = where(is.numeric)) |>
+  cols_align(align = "left", columns = 1)
+```

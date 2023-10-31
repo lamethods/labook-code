@@ -1,0 +1,99 @@
+---
+title: "Structural Equation Modeling with R for Education Scientists"
+author:
+  - name: "Joran Jongerling"
+  - name: "Sonsoles López-Pernas"
+  - name: "Mohammed Saqr"
+  - name: "Leonie V.D.E. Vogelsmeier"
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+---
+
+
+## SEM in R 
+
+### Preparation
+
+```{r, message = F, warning = F}
+library(lavaan) # install.packages("lavaan")
+library(tidyverse) # install.packages("tidyverse")
+library(rio) # install.packages("rio") 
+library(psych) # install.packages("psych")
+library(combinat) # install.packages("combinat")
+library(devtools) # install.packages("devtools")
+library(sleasy) # devtools::install_github("JoranTiU/sleasy")
+```
+
+#### Reading in the data
+
+```{r, warning=F}
+dataset <- import("https://github.com/lamethods/data/raw/main/4_teachersBurnout/2.%20Response.xlsx")
+var_names <- colnames(dataset)
+```
+
+Simulating gender covariate
+```{r}
+set.seed(1611)
+dataset$gender <- as.factor((sample(c(rep(0, 618), rep(1, 258)))))
+```
+
+
+#### Are the data suited for SEM?
+
+### Step 1: Steps from the previous chapter
+
+Holdout dataset
+```{r}
+set.seed(19)
+ind <- sample(c(rep("model.building", 438), rep("holdout", 438)))
+tmp <- split(dataset, ind)
+model.building <- tmp$model.building
+holdout <- tmp$holdout
+```
+
+
+### Step 2: Assessing Higher Levels of Invariance
+
+Specify model
+```{r}
+SEM_model <- '
+# Regressing items on factors 
+TSC =~ TSC1 + TSC2 + TSC3 + TSC4 + TSC5
+TE =~ TE1 + TE2 + TE3 + TE5
+EE =~ EE1 + EE2 + EE3 + EE4
+DE =~ DE1 + DE2 + DE3
+RPA =~ RPA1 + RPA2 + RPA3 + RPA4
+
+# Relations between factors
+TE ~ TSC
+EE ~ TE + TSC
+DE ~ TE + TSC
+RPA ~ TE + TSC
+'
+```
+
+Invariance check
+```{r}
+invarianceCheck(model = SEM_model, data = holdout, 
+                group = "gender", estimator = "MLR", intercept = FALSE, 
+                missing = FALSE, display = FALSE)
+```
+
+
+### Step 3: Building the Structural Equation Model and Assessing Fit
+
+Perform the SEM analysis on the holdout data using the specified SEM model 
+
+```{r}
+sem_robust <- sem(model = SEM_model, data = holdout, std.lv = TRUE,
+              estimator = "MLR", meanstructure = TRUE)
+```
+ 
+
+SEM output
+```{r}
+sem_structural_results(sem_robust, nd = 3)
+```
+ 

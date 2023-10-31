@@ -1,0 +1,247 @@
+---
+title: "Sequence analysis: Basic principles, technique, and tutorial"
+author:
+  - name: "Mohammed Saqr"
+  - name: "Sonsoles López-Pernas"
+  - name: "Satu Helske"
+  - name: "Marion Durand"
+  - name: "Keefe Murphy"
+  - name: "Matthias Studer"
+  - name: "Gilbert Ritschard"
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+---
+
+## Analysis of the data with sequence mining in R
+
+### Important packages
+
+```{r, results=F, message = F, warning= F}
+library(TraMineR)
+library(TraMineRextras)
+library(WeightedCluster)
+library(seqhandbook)
+library(tidyverse)
+library(rio)
+library(cluster)
+library(MetBrewer)
+library(reshape2)
+```
+
+### Reading the data
+
+
+```{r}
+Seqdatas <- 
+  import("https://github.com/lamethods/data/raw/main/1_moodleLAcourse/Events.xlsx")
+Seqdatas
+```
+
+
+### Preparing the data for sequence analysis
+
+To create a time scheme, we will use the methods described earlier in the basis of the sequence analysis section. The timestamp field will be used to compute the `lag` (the delay) between actions, find the periods of inactivity between the actions, and mark the actions that occur without a significant lag together as a `session`. Actions that follow with a significant delay will be marked as a new session. The following code performs these steps. First, the code arranges the data according to the timestamp for each user (see the previous example in the basics section), this is why we use `arrange(timecreated, user)`. The second step (#2) is to `group_by(user)` to make sure all sessions are calculated for each user separately. The third step is to compute the lag between actions. Step #4 evaluates the lag length; if the lag exceeds 900 seconds (i.e., a period of inactivity of 900 seconds), the code marks the action as the start of a new session. Step #5 labels each session with a number corresponding to its order. The last step (#6) creates the actor variable, by concatenating the username with the string "Session\_" and the session number; the resulting variable is called `session_id`.
+
+```{r}
+sessioned_data <- Seqdatas |>
+  arrange(timecreated, user) |> # Step 1: Arrange temporally
+  group_by(user) |> # Step 2: Group by yser
+  mutate(Time_gap = timecreated - (lag(timecreated))) |> # Step 3: Caclulate gap between consecutive logs
+  mutate(new_session = is.na(Time_gap) | Time_gap > 900) |> # Step 4: Mark separations of more than 15 mins as a new session
+  mutate(session_nr = cumsum(new_session)) |> # Step 5: Add session number increasing 1 with every `new_session` that is TRUE
+  mutate(session_id = paste0 (user, "_", "Session_", session_nr)) # Step 6: Add unique session id
+```
+
+See the time gap distribution
+
+```{r}
+quantile(sessioned_data$Time_gap, 
+         c(0.10, 0.50, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00), na.rm = TRUE)
+```
+
+Computer sequence length
+```{r}
+sessioned_data <- sessioned_data |>
+  group_by(user, session_nr) |>
+  mutate(sequence = seq_along(session_nr)) |>
+  mutate(sequence_length = length(sequence))
+```
+
+Check session length distribution and event number
+```{r}
+quantile(sessioned_data$sequence_length, 
+         c(0.05, 0.1, 0.5, 0.75, 0.90, 0.95, 0.98, 0.99, 1.00),  na.rm = TRUE)
+```
+
+Remove extra short sessions and trim extra long
+```{r}
+sessioned_data_trimmed <- sessioned_data %>% 
+  filter(sequence_length > 1 & sequence <= 49)
+```
+
+Create sequence object
+```{r,message = F}
+data_reshaped <- dcast(user + session_id + session_nr ~ sequence, 
+                       data = sessioned_data_trimmed, 
+                       value.var = "Action")
+Seqobject <- seqdef(data_reshaped, 4:ncol(data_reshaped))
+```
+
+Add colors to the sequence
+```{r}
+Number_of_colors <- length(alphabet(Seqobject))
+colors <- met.brewer(name = "VanGogh2", n = Number_of_colors)
+cpal(Seqobject) <- colors
+```
+
+### Statistical properties of the sequences
+
+
+```{r, eval=F}
+summary(Seqobject)
+seq_stats <- seqstatd(Seqobject)
+seq_stats$Frequencies 
+seq_stats$Entropy 
+seq_stats$ValidStates 
+```
+
+### Visualizing sequences
+
+Sequence distribution plot
+```{r,  message=F, fig.align='center', fig.width=9, fig.height=8, out.width='5in', dev="png"}
+seqplot(Seqobject, type = "d")
+```
+
+Sequence distribution plot with customized arguments
+```{r, message=F, fig.align='center', fig.width=15, fig.height=9, dev="png"}
+#| label: fig-seqdplotcustom
+seqplot(Seqobject, type = "d", cex.legend = 0.9, ncol = 6, cex.axis = 0.7, 
+        legend.prop = 0.1, border = NA)
+```
+
+Sequence index plots
+```{r, message=F, fig.align='center',fig.width=10,fig.height=6}
+seqplot(Seqobject, type = "I", cex.legend = 0.6, ncol = 6, cex.axis = 0.6, 
+        legend.prop = 0.2, border = NA)
+
+seqplot(Seqobject, type = "I", cex.legend = 0.6, ncol = 6, cex.axis = 0.6, 
+        legend.prop = 0.2, border = NA, sortv = "from.start")
+```
+ 
+Sequence mean time plot
+```{r, message=F, fig.align='center',fig.width=10,fig.height=6}
+seqplot(Seqobject, type = "mt", cex.legend = 0.7, ncol = 6, cex.axis = 0.6, 
+        legend.prop = 0.15, border = NA, ylim = c(0, 5))
+```
+
+### Dissimilarity analysis and clustering
+
+Calculate substitution cost
+```{r, message = F}
+substitution_cost_TRATE <- seqsubm(Seqobject, method = "TRATE")
+substitution_cost_TRATE
+```
+
+Constant substitution cost
+```{r,message=F,results=F}
+substitution_cost_constant <- seqsubm(
+  Seqobject,            # Sequence object
+  method = "CONSTANT",  # Method to determine costs
+  cval = 2,             # Substitution cost
+  time.varying = FALSE, # Does not allow the cost to vary over time
+  with.missing = TRUE,  # Allows for missingness state
+  miss.cost = 1,        # Cost for substituting a missing state
+  weighted = TRUE)      # Allows weights to be used when applicable
+substitution_cost_constant
+```
+
+Dissimilarity based on optimal matching (OM)
+```{r}
+dissimilarities <- seqdist(Seqobject, method = "OM", indel = 1, 
+                           sm = substitution_cost_constant)
+```
+
+Visualization of clusters using a dendrogram
+```{r, message=F, fig.align='center',  fig.width=6, fig.height=5 }
+clusters_sessionsh <- hclust(as.dist(dissimilarities), method = "ward.D2") 
+seq_heatmap(Seqobject, clusters_sessionsh)
+```
+
+Sequence distribution plot for the k=3 cluster solution
+```{r, message=F, fig.align='center",fig.width=7,fig.height=4, dev="png"}
+Cuts <- cutree(clusters_sessionsh, k = 3)
+Groups <- factor(Cuts, labels = paste("Cluster", 1:3))
+seqplot(Seqobject, type = "d", group = Groups, cex.legend = 0.8, ncol = 2, 
+        cex.axis = 0.6, legend.prop = 0.2, border = NA)
+```
+
+More distance measures
+```{r, message=F, results=F, eval = F}
+# Edit distances and sequences
+dissimOMstran <- seqdist(Seqobject, method = "OMstran", otto = 0.1, 
+                         sm = substitution_cost_constant, indel = 1)
+dissimOMspell <- seqdist(Seqobject, method = "OMspell", expcost = 0, 
+                         sm = substitution_cost_constant, indel = 1)
+dissimSVRspell <- seqdist(Seqobject, method = "SVRspell", tpow = 0)
+dissimOM <- seqdist(Seqobject, method = "OM", otto = 0.1, 
+                    sm = substitution_cost_constant, indel = 1)
+
+
+# Distances between state distributions
+dissimCHI2 <- seqdist(Seqobject, method = "CHI2", step = 1)
+dissimEUCLID <- seqdist(Seqobject, method = "EUCLID", step = 49)
+
+
+# Distances based on counts of common attribute e.g., duration (spell lengths)
+dissimOMspell <- seqdist(Seqobject, method = "OMspell", expcost = 1, 
+                         sm = substitution_cost_constant, indel = 1)
+dissimLCS <- seqdist(Seqobject, method = "LCS")
+dissimLCP <- seqdist(Seqobject, method = "LCP")
+dissimRLCP <- seqdist(Seqobject, method = "RLCP")
+```
+
+We choose Euclid
+```{r}
+set.seed(265)
+dissimEUCLID <- seqdist(Seqobject, method = "EUCLID", step = 49)
+```
+
+Cluster performance metrics. X-axis represents the number of clusters, Y-axis represents the fit index standardized value.
+```{r, message=F, fig.align='center',fig.width=8,fig.height=6}
+dissimiarities_tested <- dissimEUCLID
+Clustered <- hclust(as.dist(dissimiarities_tested), method = "ward.D2")
+Clustered_range <- as.clustrange(Clustered, diss = dissimiarities_tested, 
+                                 ncluster = 10)
+plot(Clustered_range, stat = "all", norm = "zscoremed", lwd = 2)
+```
+
+```{r, eval = F}
+Clustered_range[["stats"]]
+```
+
+Sequence distribution plot for the four cluster 
+```{r, message=F, fig.align='center',  fig.width=8,fig.height=5,   dev="png"}
+grouping <- Clustered_range$clustering$cluster4
+seqplot(Seqobject, type = "d", group = grouping, cex.legend = 0.9, ncol = 6, 
+        cex.axis = 0.6, legend.prop = 0.2, border = NA)
+```
+
+Sequence index plot for the four clusters
+```{r, message=F, fig.align='center',dev="png",fig.width=8,fig.height=5}
+seqplot(Seqobject, type = "I", group = grouping, cex.legend = 0.9, ncol = 6, 
+        cex.axis = 0.6, legend.prop = 0.2, border = NA)
+```
+Mean time plot for the four clusters
+```{r, message=F, fig.align='center', fig.width=8,fig.height=5}
+seqplot(Seqobject, type = "mt", group = grouping, cex.legend = 1, ncol = 6, 
+        cex.axis = .5, legend.prop = 0.2, ylim = c(0, 10))
+```
+
+Implication plot for the four clusters
+```{r, message=F, fig.align='center',fig.width=8,fig.height=5 }
+implicaton_plot <- seqimplic(Seqobject, group = grouping)
+plot(implicaton_plot, conf.level = 0.95, cex.legend = 0.7)
+```
+

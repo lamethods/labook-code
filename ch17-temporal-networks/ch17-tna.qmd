@@ -1,0 +1,348 @@
+---
+title: "Temporal network analysis: Introduction, methods and analysis with R" 
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+authors:
+  - Mohammed Saqr
+---
+
+## Tutorial: Building a temporal network
+
+Load library
+```{r, results=F, warning=F, message=F}
+library(tsna)
+library(ndtv)
+library(networkDynamic)
+library(tidyverse)
+library(rio)
+```
+
+Import data
+```{r}
+net_edges <- import("https://raw.githubusercontent.com/lamethods/data/main/6_snaMOOC/DLT1%20Edgelist.csv")
+net_nodes <- import("https://raw.githubusercontent.com/lamethods/data/main/6_snaMOOC/DLT1%20Nodes.csv")
+```
+
+Cleaning column names
+```{r}
+net_edges <- net_edges |> janitor::clean_names() 
+```
+
+Removing loops
+```{r}
+net_edges_NL <- net_edges |> filter(sender != receiver) 
+```
+
+Removing duplicates and replacing them with weight
+```{r}
+net_edges_NLW <- net_edges_NL |> group_by(sender, receiver) |> tally(name = "weight") #3
+```
+
+Recoding expertise
+```{r}
+net_nodes <- net_nodes |> 
+  mutate(expert_level = case_match(experience, #4
+        1 ~"Expert",
+        2 ~ "Student",
+        3 ~ "Teacher"))
+```
+
+A function to create serial days
+```{r}
+dayizer = function(my_date) {
+  numeric_date = lubridate::parse_date_time(my_date, "mdy HM")
+  Min_time = min(numeric_date)
+  my_date = (numeric_date - Min_time) / (24*60*60)
+  my_date = round(my_date,2)
+  return(as.numeric(my_date))
+}
+
+net_edges_NL$new_date = dayizer(net_edges_NL$timestamp) #5
+```
+
+Remove dicussions with no interactions
+```{r}
+net_edges_NL <- net_edges_NL |> group_by (discussion_title) |> filter(n() > 1)
+```
+
+Static base network
+```{r}
+NetworkD <- network(net_edges_NLW, directed = TRUE, matrix.type = "edgelist", 
+                    loops = FALSE, multiple = FALSE, vertices = net_nodes)
+```
+
+
+Create the required variables (start, end, and duration) defined by
+```{r}
+net_edges_NL <- net_edges_NL |> group_by(discussion_title) |>
+mutate(start = min(new_date), end = max(new_date), duration = end - start)
+```
+
+Creating a dataframe with needed variables
+```{r}
+edge_spells <- data.frame("onset" = net_edges_NL$start ,
+                         "terminus" = net_edges_NL$end, 
+                         "tail" = net_edges_NL$sender, 
+                         "head" = net_edges_NL$receiver, 
+                         "onset.censored" = FALSE,
+                         "terminus.censored" = FALSE, 
+                         "duration" = net_edges_NL$duration)
+```
+
+Creating the dynamic network network
+```{r}
+Dynamic_network <- networkDynamic(NetworkD, edge.spells = edge_spells)
+
+Active_Network <- get.inducedSubgraph(Dynamic_network,
+                                v = which(degree(Dynamic_network) > 20))
+```
+
+A plot of the full network as plotted by the plot function
+```{r, fig.align="center",fig.width=6, fig.height=6, fig.dpi=800}
+print(Dynamic_network)
+plot.network(Active_Network, pad = -0.5)
+```
+
+
+### Visualization of temporal networks 
+
+A plot of the network at weeks 1, 2, 3, and 4
+```{r, fig.align="center",fig.width=20,fig.height=5.5,   fig.dpi=700}
+plot.network(network.extract(Active_Network, onset = 1, terminus = 7))
+plot.network(network.extract(Active_Network, onset = 8, terminus = 14))
+plot.network(network.extract(Active_Network, onset = 15, terminus = 21))
+plot.network(network.extract(Active_Network, onset = 22, terminus = 28))
+```
+
+A three-dimensional visualization of the network as a sequence of snapshots in space and time prism
+```{r, message=F, warning=F,  fig.align='center',fig.width=8,fig.height=4}
+compute.animation(Active_Network)
+
+timePrism(Active_Network, at = c(1, 7, 14, 21),
+  spline.lwd = 1,
+  box = TRUE,
+  angle = 60,
+  axis = TRUE,
+  planes = TRUE,
+  plane.col = "#FFFFFF99",
+  scale.y = 1,
+  orientation = c("z", "x", "y"))
+```
+
+Play video
+```{r}
+render.d3movie(Active_Network)
+```
+ 
+Edge formation and dissolution. We see that edge formation occurs towards the start and increases till almost t=50 and edge dissolution starts scanty at the beginning and increases with time, peaking at t=70
+```{r,layout = c(1,1), fig.align="center",fig.width=7,fig.height=4.3}
+plot(tEdgeFormation(Active_Network, time.interval = 0.01), ylim = c(0,50))
+plot(tEdgeDissolution(Active_Network, time.interval = 0.01), ylim = c(0, 50))
+```
+
+A proximity timeline shows connected interacting nodes closer to each other.
+```{r,  fig.align="center", message=F, fig.height=4, fig.width=7}
+proximity.timeline(Active_Network, default.dist = 1, mode = "sammon",
+                   labels.at = 1, vertex.col = grDevices::colors(),
+                   start = 1, end = 30, label.cex = 0.5)
+```
+
+### Statistical analysis of temporal networks 
+
+#### Graph level measures
+
+
+A plot of temporal density from t=14 to t=60
+```{r, fig.align="center"}
+Density <- tSnaStats(
+  nd = Active_Network,
+  snafun = "gden",
+  start = 14,
+  end = 60,
+  time.interval = 1,
+  aggregate.dur = 7)
+plot(Density)
+```
+
+Temporal density
+```{r}
+tEdgeDensity(Active_Network) 
+gden(Active_Network) 
+```
+
+Network descriptive statistics over time
+```{r, layout=c(1,1,1)}
+Reciprocity <- tSnaStats(
+    nd=Dynamic_network,
+    snafun = "grecip" ,
+    start = 1,
+    end = 73,
+    measure = "edgewise",
+    time.interval = 1,
+    aggregate.dur = 1)
+plot(Reciprocity)
+
+Dyad.census <- tSnaStats(Active_Network, 
+                         snafun = "dyad.census")
+plot(Dyad.census)
+
+dynamicmutuality <- tSnaStats(
+  Active_Network,
+  snafun = "mutuality",
+  start = 1,
+  end = 73,
+  time.interval = 1,
+  aggregate.dur = 1
+  )
+plot(dynamicmutuality)
+```
+ 
+A plot of degree centralization over tim
+```{r, fig.align="center",fig.width=7,fig.height=5}
+Degree_centralization <- tSnaStats(
+  Active_Network,
+  snafun = "centralization",
+  start = 1,
+  end = 73,
+  time.interval = 1,
+  aggregate.dur = 1,
+  FUN = "degree")
+
+plot(Degree_centralization)
+```
+
+
+#### Node-level measures (Temopral centrality measures)
+
+Degree
+```{r}
+Degree_Centrality <- tSnaStats(
+  Active_Network,
+  snafun = "degree",
+  start = 1,
+  end = 73,
+  time.interval = 1,
+  aggregate.dur = 1,
+  cmode = "freeman")
+
+inDegree_Centrality <- tSnaStats(
+  Active_Network,
+  snafun = "degree",
+  start = 1,
+  end = 73,
+  time.interval = 1,
+  aggregate.dur = 1,
+  cmode = "indegree")
+
+OutDegree_Centrality <- tSnaStats(
+  Active_Network,
+  snafun = "degree",
+  start = 1,
+  end = 73,
+  time.interval = 1,
+  aggregate.dur = 1,
+  cmode = "outdegree")
+
+Degree_Centrality_DF <- Degree_Centrality |> as.data.frame() |> 
+  mutate(Day = 1:73, centrality = "Degree_Centrality", .before = 1L)
+
+
+inDegree_Centrality_DF <- inDegree_Centrality |> as.data.frame() |> 
+  mutate(Day = 1:73,centrality = "inDegree_Centrality", .before = 1L)
+
+
+OutDegree_Centrality_DF <- OutDegree_Centrality |> as.data.frame() |> 
+  mutate(Day = 1:73,centrality = "OutDegree_Centrality", .before = 1L)
+
+rbind(Degree_Centrality_DF, inDegree_Centrality_DF, OutDegree_Centrality_DF) 
+```
+
+ 
+ 
+Closeness, betweenness, and eigen
+```{r}
+Closeness_Centrality <- tSnaStats(
+  Active_Network,
+  snafun = "closeness",
+  start = 1,
+  end = 73,
+  time.interval = 1,
+  aggregate.dur = 1,
+  gmode = "graph")
+
+Betweenness_Centrality <- tSnaStats(
+  Active_Network,
+  snafun = "betweenness",
+  start = 1,
+  end = 73,
+  time.interval = 1,
+  aggregate.dur = 1,
+  gmode = "graph")
+
+Eigen_Centrality <- tSnaStats(
+  Active_Network,
+  snafun = "evcent",
+  start = 1,
+  end = 73,
+  time.interval = 1,
+  aggregate.dur = 1,
+  gmode = "graph")
+```
+
+Reachability
+```{r}
+FwdPathway <- tPath(
+  Active_Network,
+  v = 44,
+  start = 0,
+  graph.step.time = 7,
+  end = 30,
+  direction = "fwd")
+
+FwdPathway 
+```
+
+A forward pathway (earliest reachable node) pathway of interactions with node 44
+```{r fig.width=6, fig.height=4.2}
+plot(FwdPathway)
+```
+
+An improved forward pathway with Graphviz
+```{r fig.width=14, fig.height=9, }
+plot(FwdPathway, edge.lwd = 0.1, vertex.col= "blue", pad = -4,
+     coord=network.layout.animate.Graphviz(as.network(FwdPathway), 
+                   layout.par = list(gv.engine='dot',
+                              gv.args = '-Granksep=2')))
+```
+
+Transmission hierarchical tree showing the earliest forward interaction with node 44
+```{r fig.width=8,fig.height=5,fig.align="center"}
+transmissionTimeline(FwdPathway, jitter = F, displaylabels = TRUE, 
+                    main = "Earliest forward path" )
+```
+
+ 
+Mixing patterns between expertise levels and the teachers
+```{r, fig.align="center",fig.width=7,fig.height=3}
+Mix_experience <- tErgmStats(Active_Network,
+  "nodemix('expert_level')",
+  start = 1,
+  end = 73,
+  time.interval = 1,
+  aggregate.dur = 1)
+
+Mixing <- as.data.frame(Mix_experience)
+
+colnames(Mixing) <- gsub("mix.expert_level.", "", colnames(Mixing))
+
+Mixing$Day <- 1:73
+
+Mixing_long= pivot_longer(Mixing, contains("."))
+
+names(Mixing_long)= c("Day", "Mixing", "Frequency")
+
+ggplot(Mixing_long, aes(Day, Frequency, group = Mixing, color = Mixing)) + 
+  geom_line(alpha = .95) + theme_bw()
+```

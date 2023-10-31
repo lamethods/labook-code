@@ -1,0 +1,189 @@
+---
+title: "Factor Analysis in Education Research Using R"
+author:
+  - name: "Leonie V.D.E. Vogelsmeier"
+  - name: "Mohammed Saqr"
+  - name: "Sonsoles López-Pernas"
+  - name: "Joran Jongerling"
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+---
+
+
+## Factor Analysis in R 
+
+
+### Preparation
+
+Load libraries
+```{r, message = F, warning=F}
+library(lavaan) # install.packages("lavaan")
+library(psych) # install.packages("psych")
+library(semTools) # install.packages("semTools")
+library(effectsize) # install.packages("effectsize")
+library(rio) # install.packages("rio")
+library(tidyr) # install.packages("tidyr")
+library(ggplot2) # install.packages("ggplot2")
+library(devtools) # install.packages("devtools")
+library(sleasy) # install.packages("combinat"); install_github("JoranTiU/sleasy")
+```
+
+
+#### Reading in the data
+
+```{r, warning=F}
+dataset <- import("https://github.com/lamethods/data/raw/main/4_teachersBurnout/2.%20Response.xlsx")
+var_names <- colnames(dataset)
+```
+
+#### Are the data suited for factor analysis?
+
+```{r, eval = F}
+describe(dataset)
+```
+
+
+Sample size
+```{r}
+nrow(dataset)  
+```
+
+Bartlett's test 
+```{r}
+(cortest.bartlett(R = cor(dataset[, var_names]), n = nrow(dataset))$p.value) < 0.05 
+```
+
+Kaiser-Meyer-Olkin (KMO) test
+```{r}
+KMO(dataset)
+```
+ 
+Histogram of the responses to each of the items
+```{r,  fig.width=6, fig.height=7}
+#| label: fig-4
+dataset |> pivot_longer(2:ncol(dataset), 
+ names_to = "Variable", values_to="Score") |>
+   ggplot(aes(x=Score)) + geom_histogram(bins=6) +
+     scale_x_continuous(limits=c(0,6),breaks = c(1,2,3,4,5)) +
+     facet_wrap("Variable",ncol = 4,scales = "free" ) + theme_minimal()
+```
+ 
+Check missing data
+```{r}
+colSums(is.na(dataset))
+```
+
+#### Setting a Holdout Sample Apart
+
+Holdout
+```{r}
+set.seed(19)
+ind <- sample (c (rep("model.building", 438), rep ("holdout", 438)))
+tmp <- split (dataset, ind)
+model.building <- tmp$model.building
+holdout <- tmp$holdout
+```
+
+### Step 1: Exploring the Factor Structure
+
+Parallel analysis
+
+```{r,   fig.width=5, fig.height=4}
+#| label: fig-5
+fa.parallel(x = model.building[,var_names], fa = "fa")
+```
+
+Exploratory factor analysis 
+```{r}
+EFA <- efa (data = model.building[, var_names], nfactors = 4:6, 
+            rotation = "geomin", estimator = "MLR", meanstructure = TRUE)
+```
+ 
+Extract and sort the BIC values in ascending order.
+```{r}
+sort(fitMeasures(EFA)["bic",])
+```
+
+Obtain the factor loadings for the fivefactors. 
+```{r}
+EFA$nf5
+```
+
+### Step 2: Building the Factor Model and Assessing Fit
+
+Describe the model
+```{r}
+CFA_model <-'
+#  Regressing items on factors
+TSC =~ TSC1 + TSC2 + TSC3 + TSC5
+TE  =~ TE1  + TE2  + TE3  + TE5
+EE  =~ EE1  + EE2  + EE3  + EE4
+DE  =~ DE1  + DE2  + DE3
+RPA =~ RPA1 + RPA2 + RPA3 + RPA4
+
+# Correlations between factors
+TSC ~~ TE
+TSC ~~ EE
+TSC ~~ DE
+TSC ~~ RPA
+
+TE ~~ EE
+TE ~~ DE
+TE ~~ RPA
+
+EE ~~ DE
+EE ~~ RPA
+
+DE ~~ RPA
+'
+```
+
+Perform CFA
+```{r}
+CFA <- cfa(model = CFA_model, data = model.building[,var_names], 
+           estimator = "MLR", std.lv = TRUE, meanstructure = TRUE)
+```
+
+
+Fit measures
+```{r}
+globalFit(CFA)
+```
+
+See how much the two matrices deviate for each pair of variables
+```{r}
+localFit(CFA)
+```
+
+Look at the loadings of the final model 
+```{r}
+inspect(object = CFA, what = "std")$lambda
+```
+
+### Step 3: Assessing Generalizability
+
+Assessing the generalizability of the CFA model 
+```{r}
+CFA_holdout <- cfa(model = CFA_model, data = holdout[,var_names], 
+                   estimator = "MLR", std.lv = TRUE, meanstructure = TRUE)
+```
+
+
+Fit measures and their interpretation can again be obtained 
+```{r}
+globalFit(CFA_holdout)
+```
+
+Testing local fit again
+```{r}
+localFit(CFA_holdout)
+```
+
+
+Look at the loadings of the final model when fitted to the holdout sample.
+```{r}
+inspect(object = CFA_holdout, what = "std")$lambda
+```
+

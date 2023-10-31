@@ -1,0 +1,143 @@
+---
+title:  "The why, how and when of process mining in learning analytics: A guided tutorial in R"
+author: 
+   - name: "Sonsoles López-Pernas"
+   - name: "Mohammed Saqr"
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+---
+
+
+## Process mining with R
+
+### The libraries
+
+```{r }
+install.packages("rio")
+install.packages("tidyverse")
+install.packages("bupaverse")
+install.packages("processanimateR")
+```
+
+```{r, results = F, warning=F, message=F}
+library(bupaverse)
+library(tidyverse)
+library(rio)
+library(processanimateR)
+```
+
+### Importing the data
+
+```{r}
+df <- import("https://github.com/lamethods/data/raw/main/1_moodleLAcourse/Events.xlsx") 
+all <- import("https://github.com/lamethods/data/raw/main/1_moodleLAcourse/AllCombined.xlsx") |> 
+  select(User, AchievingGroup)
+df <- df |> merge(all, by.x = "user", by.y = "User")
+```
+
+
+```{r}
+sessioned_data <- df |>
+  group_by(user) |> 
+  arrange(user, timecreated) |>  
+  mutate(Time_gap = timecreated - (lag(timecreated))) |>  
+  mutate(new_session = is.na(Time_gap) | Time_gap > 900) |> 
+  mutate(session_nr = cumsum(new_session)) |> 
+  mutate(session_id = paste0 (user, "_", "Session_", session_nr)) |> ungroup()
+
+sessioned_data
+```
+ 
+
+#### Creating an event log
+
+```{r, warning=F}
+event_log <- simple_eventlog(sessioned_data, 
+              case_id = "session_id",
+              activity_id = "Action",
+              timestamp = "timecreated")
+```
+
+
+#### Inspecting the logs
+
+```{r,  warning = F}
+event_summary <- summary(event_log)
+```
+
+We see that the working on the group project (`Group_work`) is the most frequent activity (with 32,748 instances), followed by viewing the course main page (`Course_view`) with 25,293 instances. 
+
+```{r, eval = F}
+activities(event_log)
+```
+
+Activity frequency
+```{r,warning=F}
+event_log |> activity_frequency("activity") |> plot()
+event_log |> group_by(AchievingGroup) |> activity_frequency("activity") |> plot()
+```
+
+Activity presence
+```{r}
+event_log |> activity_presence() |> plot()
+event_log |> group_by(AchievingGroup) |> activity_presence() |> plot()
+```
+
+Antedecent-consequent matrix
+```{r, fig.width = 8, fig.height = 6}
+event_log |> process_matrix() |> plot()
+```
+ 
+#### Visualizing the process
+
+Default process map
+```{r }
+event_log |> process_map() 
+```
+
+Trimming event log
+```{r}
+event_log |> filter_activity_frequency(percentage = 0.8) -> event_log_trimmed
+```
+
+Process map trimmed
+
+```{r}
+event_log_trimmed |> process_map() 
+```
+
+Absolute case process map
+```{r}
+event_log_trimmed |> process_map(frequency("absolute-case"))
+```
+
+Relative activity frequency
+```{r}
+event_log_trimmed |> process_map(frequency("relative"))
+```
+
+
+Relative case coverage
+```{r}
+event_log_trimmed |> process_map(frequency("relative-case"))
+```
+
+Relative nodes and performance edges process map
+```{r}
+event_log_trimmed |> process_map(type_nodes = frequency("absolute"),
+                                 sec_nodes = frequency("relative"),
+                                 type_edges = performance(mean))
+```
+
+
+Comparison between two process maps (high vs. low achievers)
+```{r, eval = F}
+event_log_trimmed |> group_by(AchievingGroup) |> process_map(frequency("relative"))
+```
+
+Process animation
+```{r}
+animate_process(event_log_trimmed)
+```

@@ -5,8 +5,6 @@ author:
    - name: "Sonsoles López-Pernas"
    - name: "Mohammed Saqr"
 dpi: 800
-execute: 
-  message: F
 format: 
   html:
     df-print: "paged"
@@ -278,7 +276,6 @@ events_with_sessions |>
   select(user, ts, date, week, action, session_nr, session_id, session_len) -> events_with_sessions
 ```
 
-Features will be computed cumulatively for all course weeks up to the current one (i.e., when computing features in week k, data for weeks 1..k will be used). Functions for computing feature values and creation of a feature set are in the 'feature_creation.R' script.
 
 
 ## Predictive modeling
@@ -341,20 +338,18 @@ eval_df |>
   mutate(across(Accuracy:F1, \(x) round(x, digits=4))) |>
   select(week, Accuracy:F1) 
 ```
-According to all measures, model #2, with the data from the first two weeks of the course, is the best one. So, the students' interaction with the course activities in the first two weeks is the most predictive of their overall course outcome.    
 
 Examine the importance of features in the best model 
 ```{r}
 compute_and_plot_variable_importance(models[[2]])
 ```
-Entropy-based features, that is, features reflective of the regularity of study are those with the highest predictive power, which is in line with the literature.
 
 
 ### Create models for predicting final grade, based on progresively more weeks of events data
 
 We will first try to build a linear regression model, as it is the most often used regression model in LA.
 
-To determine if linear modelling will be applicable, we'll make use of the data from the 1st week of the course and try to build a linear regression model 
+Using 1st week data
 ```{r message=FALSE}
 ds <- create_dataset_for_grade_prediction(events_with_sessions, 1, results)
 
@@ -382,14 +377,10 @@ check_model(lr)
 ```
 From the above model check, it is clear that two important assumptions of linear models are not met: linearity and homoschedasticity (i.e. homogeneity of variance). 
 Therefore, linear model cannot be used.
-
-As a side note, in addition to checking all assumptions at once, using the `check_model` function, one can also check each assumption individually using appropriate functions from the the *performance* R package. For example, from the figure above, we can not clearly see the X-axis of the collinearity plot, so,if we want to examine collinearity more closely, we can invoke the function `check_collinearity`:
+Check collinearity
 ```{r}
 check_collinearity(lr)
 ```
-From the function's result, we can now clearly see the VIF (Variance Inflation Factor) values for all the features and a confirmation that the assumption of the absence of multi-colinearity is satisfied. 
-
-The whole list of functions for different ways of checking regression models is available at: https://easystats.github.io/performance/reference/index.html
 
 We will instead use RF to do the regression.
 ```{r warning=FALSE, message=FALSE}
@@ -422,11 +413,8 @@ regression_eval_df |>
   mutate(across(R2:MAE, \(x) round(x, digits=4))) |>
   select(WEEK, R2, RMSE, MAE)
 ```
-Again, the model with data from the first two weeks is the best in terms of the error it makes (RMSE, MAE).
-So, as early as the 2nd week of the course, we can make a prediction of the final grade and expect to predict it with ~0.5 error in grade points. Considering the range for the final grade (0-10), this is a small error.  
 
 Examine the importance of features in the best model 
 ```{r}
 compute_and_plot_variable_importance(regression_models[[2]])
 ```
-Again, regularity of study features are among the most important ones

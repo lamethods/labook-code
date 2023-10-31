@@ -1,0 +1,370 @@
+---
+title: "Getting started with R for Education Research"
+author: 
+   - name: "Santtu Tikka"
+   - name: "Juho Kopra"
+   - name: "Merja Heinäniemi"
+   - name: "Sonsoles López-Pernas"
+   - name: "Mohammed Saqr"
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+---
+
+## Learning R
+
+
+```{r}
+print("Hello, world!")
+```
+
+```{r}
+80 * (1 - 0.35)
+```
+
+
+## Best practices in programming
+
+```{r}
+## Assign arbitrary numbers to two variables
+x <- 3
+y <- 5
+## Sum of two variables
+z <- x + y
+## Print the results
+z
+```
+
+
+## Installing and importing data
+
+```{r, eval=FALSE, message=FALSE}
+#| eval: false
+#| message: false
+install.packages(c("dplyr", "tidyr"))
+```
+
+
+```{r}
+#| warning: false
+library("tidyr")
+```
+
+
+## Basic operations
+
+
+```{r}
+getwd()
+```
+
+### Arithmetic operators
+
+
+```{r}
+1 + 1 ## Addition
+2 - 1 ## Subtraction
+2 * 4 ## Multiplication
+5 / 2 ## Division
+2 ^ 4 ## Exponentiation
+```
+
+### Relational operators
+
+
+```{r}
+1 < 2  ## Smaller than
+3 > 2  ## Greater than
+2 <= 2 ## Smaller or equal to
+3 >= 3 ## Greater or equal to
+5 == 5 ## Equal to
+1 != 2 ## Equal to
+```
+
+
+```{r}
+"a" == "b"
+```
+
+### Logical operators
+
+
+```{r}
+!TRUE         ## Negation
+TRUE && TRUE  ## Logical AND
+TRUE || FALSE ## Logical OR
+TRUE & TRUE   ## Elementwise AND
+TRUE | FALSE  ## Elementwise OR
+```
+
+
+```{r}
+c(TRUE, FALSE, TRUE) | c(TRUE, FALSE, FALSE)
+```
+
+### Special operators
+
+
+```{r}
+x <- 5 ## Assign value 5 into variable named x
+y <- 7 ## Assign value 7 into variable named y
+x      ## Access value of x (value is printed into the console in RStudio)
+y      ## Access value of y
+x + y  ## Compute the sum of x and y
+x > y  ## Is x greater than y?
+```
+
+
+```{r}
+ls()
+```
+
+
+```{r}
+1:100
+```
+
+
+```{r}
+x <- 1:100
+x[c(1, 50, 100)]
+```
+
+
+## Basic data types and variables
+
+
+```{r}
+typeof(1.0)
+typeof(1L)
+```
+
+
+```{r}
+typeof("a")
+typeof("hello world!")
+```
+
+
+```{r}
+some_numbers <- 1:5
+some_numbers[some_numbers > 2]
+```
+
+
+```{r}
+some_numbers > 2
+```
+
+
+```{r}
+c(0L, "a")
+```
+
+
+```{r}
+group <- c(0, 0, 1, 0, 1, 0, 1, 1)
+factor(group, labels = c("control", "treatment"))
+```
+
+
+## Basic R objects
+
+```{r}
+grades <- data.frame(
+  group = c(2, 2, 3, 4, 4),
+  grade = c(4.67, 4.9, 2.63, 3.39, 6.89)
+)
+```
+```{r}
+grades
+```
+
+```{r}
+#| eval: false
+View(grades)
+```
+
+
+## Working with dataframes
+
+```{r}
+grades$group
+```
+
+```{r}
+summary(grades)
+```
+
+```{r}
+grades$group <- as.factor(grades$group)
+summary(grades)
+```
+
+```{r}
+mean(grades$grade)
+sd(grades$grade)
+```
+
+```{r}
+#| eval: true
+#| error: true
+#| message: true
+sd(grades)
+```
+
+### tibble
+
+```{r, message=FALSE, warning=FALSE}
+#| message: false
+#| warning:  false
+## load tidyverse to use as_tibble
+library("tidyverse")
+## convert a data frame as tibble
+grades2 <- as_tibble(grades)
+```
+
+```{r}
+grades2
+```
+
+## Pipes
+
+```{r}
+x <- 1:10
+round(mean(diff(log(x))), digits = 2)
+```
+
+```{r}
+x <- 1:10
+x |> log() |> diff() |> mean() |> round(digits = 2)
+```
+
+### magrittr pipe `%>%`
+
+```{r}
+grades2 %>%
+  summary(digits = 2)
+```
+
+
+```{r}
+grades2 %>%
+  summarise(
+    n = n(),
+    mean = mean(grade), 
+    sd = sd(grade)
+  )
+```
+
+### Native pipe `|>`
+
+```{r}
+class(`%>%`)
+```
+
+```{r}
+x <- 1:5
+quote(x |> sum())
+```
+
+```{r}
+x %>% sum
+x %>% sum()
+x |> sum()
+```
+
+```{r, error = TRUE}
+x |> sum ## produces an error
+```
+
+## Lists
+
+```{r}
+y <- list(TRUE, 7.2, "this is a list")
+```
+
+```{r}
+y[1:2]
+typeof(y[1:2])
+```
+
+```{r}
+y[[2]]
+```
+
+```{r}
+z <- list(bool = TRUE, num = 7.2, description = "this is another list")
+z$bool
+z[["description"]]
+```
+
+```{r}
+z$b
+z$n
+z$d
+```
+
+## Functions
+
+```{r}
+x <- 1:5
+mean(x)
+```
+
+```{r}
+#| eval: false
+#| echo: true
+?mean
+```
+
+
+## Conditional statements
+
+```{r ifelse}
+#| eval: false
+#| echo: true
+if (cond) expr
+if (cond) expr else alt_expr
+```
+
+```{r}
+#| error: true
+cond <- c(TRUE, FALSE)
+if (cond) {
+  print("This will not be printed")
+}
+```
+
+```{r}
+cond <- c(TRUE, FALSE, FALSE, TRUE)
+x <- 1:4
+y <- -(1:4)
+ifelse(cond, x, y)
+```
+
+## Looping constructs
+
+```{r eval=FALSE}
+#| eval: false
+#| echo: true
+for (var in seq) expr
+while (cond) expr
+```
+
+```{r}
+x <- 1:5
+for (i in x) {
+  print(x[i])
+}
+i <- 0
+while (i < length(x)) {
+  i <- i + 1
+  print(x[i])
+}
+```
+
+```{r}
+y <- lapply(x, print)
+```

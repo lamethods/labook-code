@@ -1,0 +1,227 @@
+---
+title: "An introduction and tutorial to model-based clustering in education via latent profile analysis"
+author:
+  - name: "Luca Scrucca"
+  - name: "Mohammed Saqr"
+  - name: "Sonsoles López-Pernas"
+  - name: "Keefe Murphy"
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+---
+ 
+## Application: School engagement, academic achievement, and self-regulated learning
+
+### Preparing the data
+We start by loading the packages required for the analysis. We note in particular that version 6.0.0 of `mclust` is employed here, the latest release at the time of writing.
+```{r}
+library(ggplot2)
+library(ggridges)
+library(mclust)
+library(rio)
+library(tidyverse)
+```
+Then, we read the data set from an online comma-separated-value (CSV) file, followed by some data cleaning and formatting to prepare the data for subsequent analysis. Note that the CSV file to be read is not in standard format, so we have to explicitly set the separator field using the optional argument `sep = ";"`.
+ 
+```{r}
+data <- import("https://github.com/lamethods/data/raw/main/3_engSRLach/Manuscript_School%20Engagment.csv", sep = ";")
+```
+
+```{r}
+vars <- c("PRE_ENG_COND", "PRE_ENG_COGN", "PRE_ENG_EMOC")
+x <- select(data, all_of(vars)) |> 
+  as_tibble() |>
+  rename("BehvEngmnt" = "PRE_ENG_COND",  # Behavioral engagement
+         "CognEngmnt" = "PRE_ENG_COGN",  # Cognitive engagement
+         "EmotEngmnt" = "PRE_ENG_EMOC")  # Emotional engagement
+x
+```
+A table of summary statistics for the data set can be obtained as follows:
+```{r}
+x |> pivot_longer(cols = colnames(x),
+                  names_to = "Variable",
+                  values_to = "Value") |>
+  group_by(Variable) |>
+  summarize(N = n(),
+            Nunq = n_distinct(Value),
+            Mean = mean(Value),
+            SD = sd(Value),
+            Min = min(Value),
+            Median = median(Value),
+            Max = max(Value))
+```
+
+### Model estimation and model selection
+Fit GGM and check BIC
+```{r}
+BIC <- mclustBIC(x, prior = priorControl())
+summary(BIC)
+plot(BIC)
+```
+
+### Examining model output
+The fit of the optimal model is obtained using:
+```{r}
+mod <- Mclust(x, modelNames = "VVI", G = 3, prior = priorControl())
+summary(mod, parameters = TRUE)
+```
+
+A plot showing the classification provided by the estimated model can be drawn as follows:
+```{r}
+plot(mod, what = "classification") 
+```
+
+Collect estimated means
+```{r}
+means <- data.frame(Profile = factor(1:mod$G),
+                    t(mod$parameters$mean)) |>
+  pivot_longer(cols = -1,
+               names_to = "Variable",
+               values_to = "Mean")
+```
+
+Convert variable names to factor
+```{r}
+means$Variable <- factor(means$Variable, 
+                         levels = colnames(mod$data))
+```
+
+Add mixing probabilities corresponding to profiles
+```{r}
+means <- means |> 
+  add_column(MixPro = mod$parameters$pro[means$Profile])
+means
+```
+
+Plot the means of the latent profiles
+```{r}
+ggplot(means, aes(x = Variable, y = Mean,
+                  group = Profile, 
+                  shape = Profile, 
+                  color = Profile)) +
+  geom_point(aes(size = MixPro)) +
+  geom_line(linewidth = 0.5) +
+  labs(x = NULL, y = "Latent profiles means") +
+  scale_color_manual(values = mclust.options("classPlotColors")) +
+  scale_size(range = c(1, 3), guide = "none") +
+  theme_bw() +
+  theme(legend.position = "top")
+```
+
+Bootstrap
+```{r}
+boot <- MclustBootstrap(mod, type = "bs", nboot = 999)
+```
+The bootstrap distribution of the mixing weights can be visualised using histograms with the code
+```{r}
+plot(boot, what = "pro", xlim = c(0, 1))
+```
+while the bootstrap distribution of the components means can be plotted with the code
+```{r}
+plot(boot, what = "mean", conf.level = 0.95)
+```
+
+```{r}
+sboot <- summary(boot, what = "ci")
+sboot
+```
+
+Latent profiles plot showing estimated means with 95% bootstrap confidence intervals
+```{r}
+means <- means |> 
+  add_column(lower = as.vector(sboot$mean[1,,]),
+             upper = as.vector(sboot$mean[2,,]))
+means
+
+ggplot(means, aes(x = Variable, y = Mean, group = Profile, 
+                  shape = Profile, color = Profile)) +
+  geom_point(aes(size = MixPro)) +
+  geom_line(linewidth = 0.5) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), 
+                linewidth = 0.5, width = 0.1) +
+  labs(x = NULL, y = "Latent profiles means") +
+  scale_color_manual(values = mclust.options("classPlotColors")) +
+  scale_size(range = c(1, 3), guide = "none") +
+  theme_bw() +
+  theme(legend.position = "top")
+```
+
+Finally, the entropy of the estimated partition, average entropy of each latent component, and average posterior probabilities are obtained via:
+```{r}
+#| label: fig-entropy
+#| fig-width: 6
+#| fig-height: 5
+#| fig-cap: "Entropy contributions by cluster and total entropy (dashed line)."
+probs <- mod$z                    # posterior conditional probs
+probs_map <- apply(probs, 1, max) # maximum a posteriori probs
+clusters <- mod$classification    # cluster assignment for each obs
+n <- mod$n                        # number of obs
+K <- mod$G                        # number of latent profiles
+
+# Entropy:
+E <- 1 + sum(probs * log(probs))/(n * log(K))
+E
+
+# Case-specific entropy contributions:
+Ei <- 1 + rowSums(probs * log(probs))/log(K)
+sum(Ei)/n
+
+df_entropy  <- data.frame(clusters = as.factor(clusters), entropy = Ei)
+
+
+df_entropy |>
+  group_by(clusters) |>
+  summarise(count = n(),
+            mean = mean(entropy),
+            sd = sd(entropy),
+            min = min(entropy),
+            max = max(entropy))
+
+ggplot(df_entropy, aes(y = clusters, x = entropy,  fill = clusters)) +
+  geom_density_ridges(stat = "binline", bins = 21,
+                      scale = 0.9, alpha = 0.5) +
+  scale_x_continuous(breaks = seq(0, 1 ,by=0.1), 
+                     limits = c(0, 1.05)) +
+  scale_fill_manual(values = mclust.options("classPlotColors")) +
+  geom_vline(xintercept = E, lty = 2) +
+  labs(x = "Case-specific entropy contribution", 
+       y = "Latent profile") +
+  theme_ridges(center_axis_labels = TRUE) +
+  theme(legend.position = "none",
+        panel.spacing = unit(1, "lines"),
+        strip.text.x = element_text(size = 8))
+```
+Average posterior probabilities by cluster:
+```{r}
+df_AvePP <- data.frame(clusters = as.factor(clusters), pp = probs_map)
+
+df_AvePP |>
+  group_by(clusters) |>
+  summarise(count = n(),
+            mean = mean(pp),
+            sd = sd(pp),
+            min = min(pp),
+            max = max(pp))
+
+ggplot(df_AvePP, aes(y = clusters, x = pp,  fill = clusters)) +
+  geom_density_ridges(stat = "binline", bins = 21,
+                      scale = 0.9, alpha = 0.5) +
+  scale_x_continuous(breaks = seq(0, 1, by=0.1), 
+                     limits = c(0, 1.05)) +
+  scale_fill_manual(values = mclust.options("classPlotColors")) +
+  labs(x = "MAP probabilities", y = "Latent profile") +
+  theme_ridges(center_axis_labels = TRUE) +
+  theme(legend.position = "none",
+        panel.spacing = unit(1, "lines"),
+        strip.text.x = element_text(size = 8)) 
+```
+
+Bootstrap Likelihood Ratio Test
+```{r}
+#| cache: true
+#| include: false
+
+mclustBootstrapLRT(x, modelName = "VVI", prior = priorControl())
+```
+

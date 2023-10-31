@@ -1,0 +1,343 @@
+---
+title: "An R Approach to Data Cleaning and Wrangling for Education Research"
+author: 
+   - name: "Juho Kopra"
+   - name: "Santtu Tikka"
+   - name: "Merja Heinäniemi"
+   - name: "Sonsoles López-Pernas"
+   - name: "Mohammed Saqr"
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+---
+
+
+```{r}
+#| include: false
+suppressPackageStartupMessages(library("readr"))
+suppressPackageStartupMessages(library("tidyr"))
+suppressPackageStartupMessages(library("dplyr"))
+suppressPackageStartupMessages(library("mice"))
+suppressPackageStartupMessages(library("stringr"))
+suppressPackageStartupMessages(library("lubridate"))
+options(dplyr.summarise.inform = FALSE)
+```
+
+
+## Reading data into R
+
+```{r}
+library("rio")
+url <- "https://github.com/lamethods/data/raw/main/1_moodleLAcourse/"
+events <- import(paste0(url, "Events.xlsx"), setclass = "tibble")
+results <- import(paste0(url, "Results.xlsx"), setclass = "tibble")
+demographics <- import(paste0(url, "Demographics.xlsx"), setclass = "tibble")
+```
+
+## Grouping and summarizing data
+
+
+```{r}
+library("dplyr")
+```
+
+
+```{r}
+demographics |>
+  group_by(Gender) |> 
+  count(Location)
+```
+
+```{r}
+events_summary <- events |>
+  group_by(user) |> 
+  tally() |>
+  rename(Frequency.Total = n)
+events_summary
+```
+
+```{r}
+events |>
+  group_by(user, Action) |>
+  count(Action)
+```
+
+## Selecting variables
+
+
+```{r}
+demographics |> 
+  select(Employment)
+```
+
+
+```{r}
+demographics |> 
+  pull(Employment) |>
+  head()
+```
+
+
+```{r}
+demographics |> 
+  select(user:Origin)
+demographics |> 
+  select(!Gender)
+demographics |> 
+  select(c(user, Surname))
+```
+
+
+```{r}
+cols_a <- c("user", "Name", "Surname")
+cols_b <- c("Surname", "Origin")
+demographics |> 
+  select(all_of(cols_a))
+demographics |> 
+  select(all_of(cols_a) & all_of(cols_b))
+demographics |> 
+  select(all_of(cols_a) | all_of(cols_b))
+```
+
+
+```{r}
+results |> 
+  select(starts_with("Grade"))
+results |> 
+  select(contains("Data"))
+```
+
+
+```{r}
+results |> 
+  select(where(is.character))
+results |> 
+  select(where(is.double))
+```
+
+## Filtering observations
+
+
+```{r}
+demographics |> 
+  filter(Origin == "Bosnia") |> 
+  select(Name, Surname)
+```
+
+```{r}
+demographics |>
+  filter(Gender == "F" & Location == "Remote")
+```
+
+```{r}
+demographics |>
+  filter(Gender == "F") |> 
+  filter(Location == "Remote")
+```
+
+```{r}
+results |> 
+  filter(Final_grade > 8)
+```
+
+```{r}
+events_summary |>
+  filter(Frequency.Total > 100 & Frequency.Total < 500)
+```
+
+## Transforming variables
+
+
+```{r}
+demographics |> 
+  mutate(Location = factor(Location))
+```
+
+
+```{r}
+demographics |> 
+  mutate(
+    Gender = factor(Gender),
+    Location = factor(Location),
+    Employment = factor(Employment)
+  )
+```
+
+```{r}
+demographics |> 
+  mutate(across(c(Gender, Location, Employment), factor))
+```
+
+```{r}
+library("lubridate")
+demographics |> 
+  mutate(
+    Birthdate = as.Date(Birthdate, format = "%d.%m.%Y"),
+    Age = year(as.period(interval(start = Birthdate, end = date("2023-03-12")))),
+    FullName = paste0(Surname, ", ", Name) 
+  ) |> 
+  select(Age, FullName)
+```
+
+```{r}
+results <- results |>
+  mutate(
+    AchievingGroup = factor(
+      case_when(
+        ntile(Final_grade, 2) == 1 ~ "Low achiever",
+        ntile(Final_grade, 2) == 2 ~ "High achiever"
+      )
+    )
+  )
+```
+
+```{r}
+events_summary <- events_summary |> 
+  mutate(
+    ActivityGroup = factor(
+      case_when(
+        ntile(Frequency.Total, 3) == 1 ~ "Low activity",
+        ntile(Frequency.Total, 3) == 2 ~ "Moderate activity",
+        ntile(Frequency.Total, 3) == 3 ~ "High activity"
+      )
+    )
+  )
+```
+
+## Rearranging data
+
+
+```{r}
+demographics |> 
+  arrange(Surname, Name)
+```
+
+```{r}
+demographics |>
+  arrange(desc(Surname), desc(Name))
+```
+
+```{r}
+demographics |>
+  relocate(user, .after = Employment)
+```
+
+## Reshaping data
+
+
+```{r}
+library("tidyr")
+events_types <- events |>
+  group_by(user, Action) |>
+  count(Action) |> 
+  pivot_wider(
+    names_from = "Action", 
+    names_prefix = "Frequency.",
+    values_from = "n",
+    values_fill = 0
+  )
+events_types
+```
+
+## Joining data
+
+
+```{r}
+left_join(demographics, events_summary, by = "user")
+```
+
+```{r}
+all_combined <- demographics |> 
+  left_join(events_types, by = "user") |>
+  left_join(events_summary, by = "user") |> 
+  left_join(results, by = "user")
+all_combined
+```
+
+## Missing data
+
+
+```{r}
+#| message: false
+
+library("mice")
+set.seed(44)
+events_types <- events_types |>
+  rename(
+    "Ethics" = "Frequency.Ethics",
+    "Social" = "Frequency.Social",
+    "Practicals" = "Frequency.Practicals"
+  )
+ampute_list <- events_types |>
+  ungroup(user) |>
+  select(Ethics:Practicals)|>
+  as.data.frame() |>
+  ampute(prop = 0.3)
+events_types_mis <- ampute_list$amp |>
+  as_tibble()
+events_types_mis[2, "Practicals"] <- NA
+```
+
+```{r}
+events_types_mis
+```
+
+```{r}
+md.pattern(events_types_mis, rotate.names = TRUE)
+```
+
+
+```{r}
+events_types_mis |>
+  drop_na()
+```
+
+```{r}
+imp <- mice(events_types_mis, method = "mean", m = 1, maxit = 1 , print = FALSE)
+complete(imp) |> 
+  head()
+```
+
+```{r}
+fit <- with(imp, lm(Ethics ~ 1))
+summary(fit)
+```
+
+```{r, message=FALSE}
+imp2 <- mice(events_types_mis, method = "pmm", m = 10, maxit = 100, print = FALSE)
+fit2 <- with(imp2, lm(Ethics ~ Practicals))
+pool_fit <- pool(fit2)
+## Multiple imputation
+summary(pool_fit)
+## Complete cases
+summary(lm(Ethics ~ Practicals, events_types_mis))["coefficients"]
+## Without missingness
+summary(lm(Ethics ~ Practicals, events_types))["coefficients"] 
+```
+
+## Correcting erroneous data
+
+```{r}
+library("stringr")
+demographics |>
+  filter(str_detect(string = Surname, pattern = "sen$")) |>
+  pull(Surname)
+```
+
+```{r}
+demographics |>
+  mutate(Surname = str_replace(
+    string = Surname, pattern = "sen$", replacement = "ssen")
+  ) |>
+  filter(str_detect(string = Surname, pattern = "sen$")) |>
+  pull(Surname)
+```
+
+```{r}
+demographics <- demographics |>
+  mutate(Surname = str_replace(
+    string = Surname, pattern = "sen$", replacement = "ssen")
+  )
+```
+

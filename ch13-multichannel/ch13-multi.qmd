@@ -1,0 +1,376 @@
+---
+title: "Chapter 13. Multi-channel sequence analysis in educational research: An introduction and tutorial with R"
+author: 
+   - name: "Sonsoles López-Pernas"
+   - name: "Mohammed Saqr"
+   - name: "Satu Helske"
+   - name: "Keefe Murphy"
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+---
+
+## Case study: the longitudinal association of engagement and achievement
+
+### The packages
+
+
+```{r, results=FALSE, warning=FALSE, message=FALSE}
+library(rio)
+library(tidyverse)
+library(TraMineR)
+library(seqHMM) 
+library(WeightedCluster) 
+```
+
+### The data
+
+```{r, results=F}
+URL <- "https://github.com/sonsoleslp/labook-data/raw/main/"
+fileName <- "9_longitudinalEngagement/SequenceEngagementAchievement.xlsx"
+df <- import(paste0(URL, fileName))
+df
+```
+
+### Creating the sequences
+
+#### Engagement channel
+
+```{r}
+eng_seq_df <- df |> arrange(UserID, Sequence) |>
+  pivot_wider(id_cols = "UserID", names_from = "Sequence", values_from = "Engagement")
+```
+
+
+```{r, results=FALSE, message=FALSE}
+engagement_levels <- c("Active", "Average", "Disengaged")
+colours <- c("#28a41f", "#FFDF3C", "#e01a4f")
+eng_seq <- seqdef(eng_seq_df , 2:9, alphabet = engagement_levels, cpal = colours)
+```
+
+Sequence distribution plot and index plot of the course engagement states
+```{r}
+seqdplot(eng_seq, border = NA,  ncol = 3, legend.prop = 0.2)
+seqIplot(eng_seq, border = NA,  ncol = 3, legend.prop = 0.2, sortv = "from.start")
+```
+
+
+#### Achievement channel
+
+```{r}
+ach_seq_df <- df |> arrange(UserID,Sequence) |>
+  pivot_wider(id_cols = "UserID", names_from = "Sequence", values_from = "Achievement")
+```
+
+
+```{r, results=FALSE, message=FALSE}
+achievement_levels <- c("Low", "Intermediate", "Achiever")
+
+coloursA <- c("#a5e3ff","#309bff","#3659bf")
+ach_seq <- seqdef(ach_seq_df , 2:9, cpal = coloursA, alphabet = achievement_levels)
+```
+
+Sequence distribution plot and index plot of the course achievement states.
+```{r}
+seqdplot(ach_seq, border = NA,  ncol = 3, legend.prop = 0.2)
+seqIplot(ach_seq, border = NA,  ncol = 3, legend.prop = 0.2, sortv = "from.start")
+```
+
+
+#### Visualising the multi-channel sequence
+
+
+```{r, results=FALSE}
+multi_seq <- mc_to_sc_data(list(eng_seq, ach_seq))
+```
+
+
+```{r}
+alphabet(multi_seq)
+```
+
+
+```{r, results=FALSE, message=FALSE}
+coloursM <-  c("#115a20","#24b744","#78FA94",
+              "#3659bf","#309bff","#93d9ff",
+              "#E01A1A","#EB8A8A","#F5BDBD")
+
+cpal(multi_seq) <- coloursM
+```
+
+Sequence distribution plot and index plot of the multi-channel sequence
+```{r}
+seqdplot(multi_seq, border = NA,  ncol = 3, legend.prop = 0.2)
+seqIplot(multi_seq, border = NA,  ncol = 3, legend.prop = 0.2, sortv = "from.start")
+```
+
+### Clustering via multi-channel dissimilarities
+
+```{r, message=FALSE}
+sub_mats <- list(engagement = seqsubm(eng_seq, method = "TRATE"),
+                 achievement = seqsubm(ach_seq, method = "TRATE"))
+```
+
+
+```{r, message=FALSE}
+channels <- list(engagement = eng_seq, achievement = ach_seq)
+
+mc_dist <- seqMD(channels, 
+                 sm = sub_mats, 
+                 what = "diss", 
+                 method = "OM", 
+                 cweight = c(1, 1))
+```
+
+
+```{r}
+Clustered <- hclust(as.dist(mc_dist), method = "ward.D2")
+```
+
+
+```{r, include=FALSE, eval=FALSE}
+Clustered_range <- as.clustrange(Clustered, diss = mc_dist, ncluster = 10)
+plot(Clustered_range, stat = "all", norm = "zscoremed", lwd = 2)
+Groups <- Clustered_range$clustering$cluster6
+```
+
+```{r}
+Cuts <- cutree(Clustered, k = 6)
+Groups <- factor(Cuts, labels = paste("Cluster", 1:6))
+```
+
+State distribution plots per cluster for the combined multi-channel sequences
+```{r, fig.height=7.5, fig.width=7.4, fig.dpi=500, fig.align='center'.",out.width='6in'}
+#| label: fig-statd-multi
+seqplot(multi_seq, type = "d", group = Groups, 
+         ncol = 3, legend.prop = 0.1, border = NA)
+```
+
+Stacked state distribution plots per cluster showing both constituent channels
+```{r, echo=c(1:3), fig.height=6, fig.width=6, fig.dpi=500, fig.align='center', fig.keep="last", eval = c(1:7,9)}
+ssp_k <- list()
+for(k in 1:6) {
+  ssp_k[[k]] <- ssp(list(eng_seq[Cuts == k,], 
+                         ach_seq[Cuts == k,]),
+                    type = "d", border = NA, 
+                    with.legend = FALSE, title = levels(Groups)[k])
+}
+gridplot(ssp_k, ncol = 3, byrow = TRUE, 
+         row.prop = c(0.4, 0.4, 0.2), cex.legend = 0.8)
+```
+
+
+```{r}
+eng_seq_df$ClusterDistance = Groups
+```
+
+
+### Building a mixture hidden Markov model
+
+```{r}
+init_mhmm <- build_mhmm(observations = list(eng_seq, ach_seq), 
+                        n_states = c(2, 2, 2))
+```
+
+
+```{r, cache=TRUE}
+set.seed(2294)
+mhmm_fit <- fit_model(init_mhmm, 
+                      control_em = list(restart = list(times = 100)))
+```
+
+
+```{r}
+mhmm_fit$em_results$best_opt_restart
+```
+
+Multi-channel sequence index plots (don't forget to click enter on the console)
+```{r, fig.keep = c(2,3,4), fig.width=5.4, fig.height = 8, fig.dpi = 200, layout = c(1,1,1)"}
+HIDDEN_STATES <- c("darkred", "pink", "darkblue", "purple", 
+                   "lightgoldenrod1", "orange")
+
+mssplot(mhmm_fit$model,  
+        plots = "both", 
+        type = "I", 
+        sortv = "mds.hidden",
+        yaxis = TRUE, 
+        with.legend	= "bottom",
+        ncol.legend = 1,
+        cex.title = 1.3,
+        hidden.states.colors = HIDDEN_STATES)
+```
+
+
+Transitions between hidden states for each trajectory
+```{r, fig.width=8,fig.height=5, fig.keep='last', fig.dpi = 100, fig.align='center'}
+plot(mhmm_fit$model, 
+     vertex.size = 60,
+     cpal = coloursM, 
+     label.color = "black",
+     vertex.label.color = "black",
+     edge.color = "lightgray",
+     edge.label.color = "black",
+     ncol.legend = 1, 
+     ncol = 3,
+     rescale = FALSE,
+     interactive = FALSE,
+     combine.slices = 0.05,
+     combined.slice.label = "States with probability < 0.05")
+```
+
+
+```{r}
+initial_probs <- list(c(1, 0), c(1, 0), c(1, 0))
+transition_probs <- simulate_transition_probs(n_states = 2, 
+                                              n_clusters = 3, 
+                                              left_right = TRUE)
+emission_probs <- simulate_emission_probs(n_states = 2, 
+                                          n_symbols = 3, 
+                                          n_clusters = 1)
+```
+
+We must now provide the probability objects to the `build_mhmm()` function along with the observations. Since the number of clusters and hidden states can be derived from the probabilities, we no longer need to provide the `n_states` argument. Specifically, this is because `emission_probs` is given as a list of length 3 with each element being a list of length 2, corresponding to three clusters each with two hidden states per cluster, as before. This new model is fitted in the same way, by using the `fit_model()` function.
+
+```{r, cache=TRUE}
+set.seed(2294)
+init_emission_probs <- list(list(emission_probs, emission_probs),
+                            list(emission_probs, emission_probs),
+                            list(emission_probs, emission_probs))
+init_mhmm_i <- build_mhmm(observations = list(eng_seq, ach_seq), 
+                          initial_probs = initial_probs, 
+                          transition_probs = transition_probs, 
+                          emission_probs = init_emission_probs)
+
+mhmm_fit_i <- fit_model(init_mhmm_i, 
+                        control_em = list(restart = list(times = 200)))
+```
+
+Again, we need to check whether the model has converged to a valid solution by checking if the same number is repeated at the beginning of the `best_opt_start` output:
+
+```{r}
+mhmm_fit_i$em_results$best_opt_restart
+```
+
+Now that we have checked that our model is correct, we can give the channels and clusters representative names so that they look better when plotting:
+
+```{r}
+mhmm_fit_i$model$cluster_names <- c("Trajectory 1",
+                                    "Trajectory 2", 
+                                    "Trajectory 3")
+mhmm_fit_i$model$channel_names <- c("Engagement",
+                                    "Achievement")
+```
+
+
+Multi-channel sequence index plots with fixed start (don't forget to click enter on the console)
+```{r, fig.keep = c(2,3,4), fig.width=5.4, fig.height = 8, fig.dpi = 200, layout = c(1,1,1)}
+HIDDEN_STATES <- c("darkred", "pink", "darkblue", "purple", 
+                   "lightgoldenrod1", "orange")
+
+mssplot(mhmm_fit_i$model,  
+        plots = "both", 
+        type = "I", 
+        sortv = "mds.hidden",
+        yaxis = TRUE, 
+        with.legend	= "bottom",
+        ncol.legend = 1,
+        cex.title = 1.3,
+        hidden.states.colors = HIDDEN_STATES)
+```
+
+
+```{r}
+BIC(mhmm_fit$model)
+BIC(mhmm_fit_i$model)
+```
+
+### Incorporating covariates in MHMMs
+
+
+```{r}
+cov_df <- df |> 
+  arrange(UserID, Sequence) |> 
+  filter(!duplicated(UserID)) |> 
+  select(Prev_grade, Attitude, Gender)
+```
+
+
+```{r, cache=TRUE}
+set.seed(2294)
+init_mhmm_1 <- build_mhmm(observations = list(eng_seq, ach_seq), 
+                          initial_probs = mhmm_fit_i$model$initial_probs, 
+                          transition_probs = mhmm_fit_i$model$transition_probs, 
+                          emission_probs = mhmm_fit_i$model$emission_probs,
+                          data = cov_df,
+                          formula = ~ Prev_grade)
+init_mhmm_2 <- build_mhmm(observations = list(eng_seq, ach_seq), 
+                          initial_probs = mhmm_fit_i$model$initial_probs, 
+                          transition_probs = mhmm_fit_i$model$transition_probs, 
+                          emission_probs = mhmm_fit_i$model$emission_probs,
+                          data = cov_df,
+                          formula = ~ Attitude)
+init_mhmm_3 <- build_mhmm(observations = list(eng_seq, ach_seq), 
+                          initial_probs = mhmm_fit_i$model$initial_probs, 
+                          transition_probs = mhmm_fit_i$model$transition_probs, 
+                          emission_probs = mhmm_fit_i$model$emission_probs,
+                          data = cov_df,
+                          formula = ~ Gender)
+```
+
+
+```{r}
+mhmm_fit_1 <- fit_model(init_mhmm_1, 
+                        control_em = list(restart = list(times = 50)))
+mhmm_fit_2 <- fit_model(init_mhmm_2, 
+                        control_em = list(restart = list(times = 50)))
+mhmm_fit_3 <- fit_model(init_mhmm_3, 
+                        control_em = list(restart = list(times = 50)))
+```
+
+
+```{r}
+BIC(mhmm_fit_i$model)
+BIC(mhmm_fit_1$model)
+BIC(mhmm_fit_2$model)
+BIC(mhmm_fit_3$model)
+```
+
+Multi-channel sequence index plots for the optimal covariate-dependent MHMM  (don't forget to click enter on the console)
+```{r, fig.keep = c(2,3,4), fig.width=5.4, fig.height = 8, fig.dpi = 200, layout = c(1,1,1)}
+mssplot(mhmm_fit_1$model,  
+        plots = "both", 
+        type = "I", 
+        sortv = "mds.hidden",
+        yaxis = TRUE, 
+        with.legend	= "bottom",
+        ncol.legend = 1,
+        cex.title = 1.3,
+        hidden.states.colors = HIDDEN_STATES)
+```
+
+
+```{r}
+cluster_names(mhmm_fit_1$model) <- c("LowEngLowAch", "HighEngHighAch", "LowEngHighAch")
+```
+
+ 
+```{r}
+summary_mhmm_1 <- summary(mhmm_fit_1$model)
+summary_mhmm_1
+```
+
+```{r}
+prior_prob <- summary_mhmm_1$prior_cluster_probabilities
+posterior_prob <- summary_mhmm_1$posterior_cluster_probabilities
+```
+
+
+```{r}
+eng_seq_df$ClusterMHMM <- summary_mhmm_1$most_probable_cluster
+```
+
+
+```{r}
+df$HiddenState <- hidden_paths(mhmm_fit_1$model) |> pivot_longer(everything()) |> pull(value)
+```

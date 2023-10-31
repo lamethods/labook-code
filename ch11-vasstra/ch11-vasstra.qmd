@@ -1,0 +1,260 @@
+---
+title: "Modeling the Dynamics of Longitudinal Processes in Education. A tutorial with R for The VaSSTra Method"
+author:
+  - name: "Sonsoles López-Pernas"
+  - name: "Mohammed Saqr"
+dpi: 900
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+---
+
+## *VassTra* with R
+
+
+### The packages
+
+```{r, results=F, warning=F, message=F}
+library(rio)
+library(tidyverse)
+library(ggplot2)
+library(cluster)
+library(BBmisc)
+library(tidyLPA)
+library(TraMineR)
+library(seqhandbook)
+library(Gmisc)
+library(WeightedCluster)
+```
+
+### The dataset
+
+
+```{r}
+LongitudinalData <- 
+  import("https://github.com/lamethods/data/raw/main/9_longitudinalEngagement/LongitudinalEngagement.csv")
+LongitudinalData
+```
+
+
+### From variables to states
+
+Standardize variables
+```{r}
+LongitudinalData |> group_by(CourseID) |>  
+  mutate_at(vars(Freq_Course_View:Active_Days), 
+            function(x) normalize(x, method = "standardize")) |> 
+  ungroup() -> df
+df
+```
+
+
+Select clustering variables
+```{r}
+to_cluster <- dplyr::select(df, Freq_Course_View, Freq_Forum_Consume, 
+                                Freq_Forum_Contribute, Freq_Lecture_View, 
+                                Regularity_Course_View, Session_Count, 
+                                Total_Duration, Active_Days)
+```
+
+Cluster using LPA
+```{r, eval=F}
+set.seed(22294)
+Mclustt <- to_cluster |> ungroup() |> 
+  single_imputation() |> 
+  estimate_profiles(1:10, models = c(1, 2, 3, 6)) 
+```
+
+
+Compare statistics
+```{r, eval=F}
+cluster_statistics <- Mclustt |>  
+  compare_solutions(statistics = c("AIC", "BIC","Entropy"))
+fits <- cluster_statistics$fits |> mutate(Model = factor(Model))
+
+fits |>
+  ggplot(aes(x = Classes,y = Entropy, group = Model, color = Model)) + 
+  geom_line() +
+  scale_x_continuous(breaks = 0:10) +
+   geom_point() +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+fits |>
+  ggplot(aes(x = Classes,y = BIC, group = Model, color = Model)) + 
+  geom_line() +
+  scale_x_continuous(breaks = 0:10) +
+  geom_point() +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+
+Choose model
+
+```{r, warning=F, message = F}
+df$State <- Mclustt$model_1_class_3$model$classification
+```
+
+Plot mean variable per cluster
+```{r, fig.align='center', fig.cap="Mean value of each variable for each cluster",fig.width=8,fig.height=4}
+#| label: fig-profilesunnamed
+df |> pivot_longer(Freq_Course_View:Active_Days) |> 
+  mutate(State = factor(State)) |>
+  filter(name %in% names(to_cluster)) |>
+  mutate(name = gsub("_", " ", name)) |>
+  group_by(name, State) |>
+  summarize_if(is.double, mean) -> long_mean
+
+long_mean |>
+  ggplot(aes(fill = name, y = value, x = State)) +
+  geom_col(position = "dodge") + 
+  scale_fill_brewer("", type = "qual", palette=8) +
+  theme_minimal() +
+  ylab ("Mean value") + 
+  theme(legend.position = "bottom")
+```
+
+Convert states to factors
+```{r}
+engagement_levels = c("Disengaged", "Average", "Active")
+df_named <- df |> 
+  mutate(State = factor(State, levels = 1:3, labels = engagement_levels)) 
+```
+
+### From states to sequences
+
+Pivot data wider
+```{r}
+clus_seq_df <- df_named |> arrange(UserID, Sequence) |>
+  pivot_wider(id_cols = "UserID", names_from = "Sequence", values_from = "State")
+```
+
+Construct sequence
+```{r}
+colors <- c("#28a41f", "#FFDF3C", "#e01a4f")
+clus_seq <- seqdef(clus_seq_df , 2:9, 
+                   alphabet = sort(engagement_levels), cpal = colors)
+```
+
+Sequence distribution plot of the course states
+```{r, fig.align='center',  fig.width=6,fig.height=4, out.width='4in'}
+#| label: fig-seqdplot1
+seqdplot(clus_seq, border = NA, use.layout = TRUE, 
+         with.legend = T, ncol = 3, legend.prop = 0.2)
+```
+
+Sequence heatmap
+```{r, fig.align='center',message=F,warning=F }
+sm <- seqsubm(clus_seq, method = "CONSTANT")
+mvad.lcss <- seqdist(clus_seq, method = "LCS", sm = sm, with.missing = T)
+clusterward2 <- agnes(mvad.lcss, diss = TRUE, method = "ward")
+seq_heatmap(clus_seq, clusterward2)
+```
+
+### From sequences to trajectories
+
+Distance calculation 
+```{r}
+dissimLCS <- seqdist(clus_seq, method = "LCS")
+```
+
+Hierarchical clustering 
+
+```{r}
+Clustered <- hclust(as.dist(dissimLCS), method = "ward.D2")
+```
+
+Cluster statistics for the hierarchical clustering
+
+```{r, fig.align='center',  fig.width=8, fig.height=6}
+Clustered_range <- as.clustrange(Clustered, diss = dissimLCS, ncluster = 10)
+plot(Clustered_range, stat = "all", norm = "zscoremed", lwd = 2)
+```
+
+ 
+```{r}
+grouping <- Clustered_range$clustering$cluster3
+```
+
+Sequence index plot of the course states per trajectory
+```{r, fig.align='center',  fig.width=8, fig.height=6}
+seqIplot(clus_seq, group = grouping, sortv = "from.start")
+```
+
+Rename clusters
+```{r}
+trajectories_names = c("Mostly average", "Mostly active", "Mostly disengaged")
+trajectories = trajectories_names[grouping]
+```
+
+Sequence distribution plot of the course states per trajectory
+```{r, fig.align='center',fig.width=8, fig.height=5}
+seqdplot(clus_seq, group = trajectories)
+```
+
+### Studying trajectories
+
+Mean time plot of the course states per trajectory
+```{r, fig.align='center',fig.width=8, fig.height=6}
+seqmtplot(clus_seq, group = trajectories)
+```
+
+The 10 most frequent sequences in each trajectory
+```{r, fig.align='center', fig.width=8, fig.height=6}
+seqfplot(clus_seq, group = trajectories)
+```
+
+Transversal entropy plot of each trajectory
+```{r, fig.align='center',fig.width=8, fig.height=5}
+seqHtplot(clus_seq, group = trajectories)
+```
+
+Most discriminating subsequences per trajectory
+
+```{r, fig.align='center',  fig.width=9, fig.height=6}
+mvad.seqe <- seqecreate(clus_seq)
+fsubseq <- seqefsub(mvad.seqe, pmin.support = 0.05, max.k = 2)
+discr <- seqecmpgroup(fsubseq, group = trajectories, method = "chisq")
+plot(discr[1:10])
+```
+
+```{r} 
+Indices <- seqindic(clus_seq,
+            indic = c("trans","entr","cplx","prec","volat","integr"), 
+            ipos.args = list(pos.states = c("Active")), 
+            prec.args = list(c("Disengaged")))
+Indices
+```
+ 
+
+```{r,eval=F}
+Indices$Trajectory = trajectories
+
+Indices |> ggplot(aes(x = Trajectory, y = Prec, fill = Trajectory)) + 
+  geom_boxplot() + scale_fill_manual(values = colors) + 
+  theme_minimal() + theme(legend.position = "none")
+
+Indices |> ggplot(aes(x = Trajectory, y = Integr, fill = Trajectory)) + 
+  geom_boxplot() + scale_fill_manual(values = colors) + 
+  theme_minimal() + theme(legend.position = "none")
+```
+ 
+
+Transition matrix
+```{r, results=F, message = F}
+transition_matrix = seqtrate(clus_seq, count = T)  
+```
+
+
+Transition plot
+```{r, message=F, fig.align='center',  out.width='4in'}
+transition_matrix = seqtrate(clus_seq, count = T)  
+transitionPlot(transition_matrix, 
+                              fill_start_box = colors,
+                              txt_start_clr = "black",
+                              cex = 1,
+                              box_txt = rev(engagement_levels))
+```
+
