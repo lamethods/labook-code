@@ -1,0 +1,1030 @@
+---
+title: "Epistemic Network Analysis and Ordered Network Analysis in Learning Analytics"
+author: 
+   - Yuanru Tan
+   - Zachari Swiecki
+   - A. R. Ruis
+   - David Williamson Shaffer
+format: 
+  html:
+    df-print: "paged"
+---
+
+# Epistemic network analysis in R
+
+## Install the rENA package and load the library
+
+```{r message=FALSE}
+# install.packages("rENA", repos = c("https://cran.qe-libs.org", "https://cran.rstudio.org"))
+```
+
+```{r message=FALSE}
+library(rENA)
+```
+
+```{r message = FALSE}
+# install.packages("tma", repos = c("https://cran.qe-libs.org", "https://cran.rstudio.org"))
+```
+
+```{r message = FALSE, eval = F}
+library(tma)
+```
+
+## Dataset
+
+
+```{r}
+data = rENA::RS.data
+```
+
+
+```{r}
+data
+```
+
+
+## Construct an ENA model
+
+
+### Specify units
+
+
+```{r}
+unitCols = c("Condition", "UserName")
+```
+
+
+```{r}
+unique(data[, unitCols])
+```
+
+### Specify codes
+
+```{r}
+codeCols = c('Data', 'Technical.Constraints', 'Performance.Parameters', 'Client.and.Consultant.Requests', 'Design.Reasoning', 'Collaboration')
+```
+
+
+```{r}
+data[,codeCols]
+```
+
+### Specify conversations
+
+```{r}
+conversationCols = c("Condition", "GroupName", "ActivityNumber")
+```
+
+
+```{r}
+unique(data[, conversationCols])
+```
+
+### Specify the window
+
+```{r}
+window.size.back = 7
+```
+
+```{r}
+window.size.back = "INF"
+```
+
+### Specify groups and rotation method
+
+```{r}
+groupVar = "Condition" # "Condition" is the column used as our grouping variable 
+groups = c("FirstGame", "SecondGame") # "FirstGame" and "SecondGame" are the two unique values of the "Condition" column
+mean = TRUE
+```
+
+### Specify metadata
+
+```{r}
+metaCols = c("CONFIDENCE.Change","CONFIDENCE.Pre","CONFIDENCE.Post","C.Change") # optional
+```
+
+### Construct a model
+
+```{r}
+accum.ena = 
+  ena.accumulate.data(
+    text_data = RS.data[, 'text'],
+    units = data[,unitCols],
+    conversation = data[,conversationCols],
+    metadata = data[,metaCols], # optional
+    codes = data[,codeCols],
+    window.size.back = 7
+)
+
+set.ena = 
+  ena.make.set(
+    enadata = accum.ena, # the accumulation run above
+    rotation.by = ena.rotate.by.mean, # equivalent of mean=TRUE in the ena function
+    rotation.params = list(
+      accum.ena$meta.data$Condition=="FirstGame", # equivalent of groups in the ena function
+      accum.ena$meta.data$Condition=="SecondGame" # equivalent of groups in the ena function
+  )
+)
+```
+
+## Summary of key model outputs
+
+### Connection counts
+
+```{r}
+set.ena$connection.counts
+```
+
+### Line weights
+
+```{r}
+set.ena$line.weights
+```
+
+### ENA points
+
+```{r}
+set.ena$points
+```
+
+### Rotation matrix
+
+```{r}
+set.ena$rotation.matrix
+```
+
+### Metadata
+
+```{r}
+set.ena$meta.data
+```
+
+## ENA visualization
+
+### Plot a mean network
+
+```{r}
+# Subset lineweights for `FirstGame`
+first.game.lineweights = as.matrix(set.ena$line.weights$Condition$FirstGame)
+
+# Subset lineweights for `SecondGame`
+second.game.lineweights = as.matrix(set.ena$line.weights$Condition$SecondGame)
+```
+
+
+```{r}
+first.game.mean = as.vector(colMeans(first.game.lineweights))
+second.game.mean = as.vector(colMeans(second.game.lineweights))
+```
+
+
+```{r}
+ena.plot(set.ena, title = "FirstGame mean plot")  |>
+  ena.plot.network(network = first.game.mean, colors = c("red"))
+```
+
+ 
+```{r}
+ena.plot(set.ena, title = "SecondGame mean plot")  |>
+  ena.plot.network(network = second.game.mean, colors = c("blue"))
+```
+
+```{r}
+subtracted.mean = first.game.mean - second.game.mean
+```
+
+ 
+
+```{r}
+ena.plot(set.ena, title = "Subtracted: `FirstGame` (red) - `SecondGame` (blue)")  |>
+  ena.plot.network(network = subtracted.mean * 5, # Optional rescaling of the line weights
+                   colors = c("red", "blue"))
+```
+
+### Plot a mean network and its points
+
+```{r}
+# Subset rotated points for the first condition
+first.game.points = as.matrix(set.ena$points$Condition$FirstGame)
+
+# Subset rotated points for the second condition
+second.game.points = as.matrix(set.ena$points$Condition$SecondGame)
+```
+
+```{r}
+ena.plot(set.ena, title = " points (dots), mean point (square), and confidence interval (box)") |> 
+          ena.plot.points(points = first.game.points, colors = c("red")) |> 
+          ena.plot.group(point = first.game.points, colors =c("red"), 
+                         confidence.interval = "box")
+```
+
+
+
+```{r}
+ena.plot(set.ena, title = "FirstGame mean network and its points") |> 
+          ena.plot.network(network = first.game.mean, colors = c("red")) |>
+          ena.plot.points(points = first.game.points, colors = c("red")) |> 
+          ena.plot.group(point = first.game.points, colors =c("red"), 
+                         confidence.interval = "box") 
+```
+
+
+
+```{r}
+ena.plot(set.ena, title = " points (dots), mean point (square), and confidence interval (box)") |> 
+          ena.plot.points(points = second.game.points, colors = c("blue")) |> 
+          ena.plot.group(point = second.game.points, colors =c("blue"), 
+                         confidence.interval = "box")
+```
+
+
+```{r}
+ena.plot(set.ena, title = "SecondGame mean network and its points") |> 
+          ena.plot.network(network = second.game.mean, colors = c("blue")) |>
+          ena.plot.points(points = second.game.points, colors = c("blue")) |> 
+          ena.plot.group(point = second.game.points, colors =c("blue"), 
+                         confidence.interval = "box")
+```
+
+ 
+```{r}
+ena.plot(set.ena, title = "Subtracted mean network: `FirstGame` (red) - `SecondGame` (blue)")  |>
+          ena.plot.network(network = subtracted.mean * 5,
+          colors = c("red", "blue")) |>
+          ena.plot.points(points = first.game.points, colors = c("red")) |> 
+          ena.plot.group(point = first.game.points, colors =c("red"), 
+                         confidence.interval = "box") |>
+          ena.plot.points(points = second.game.points, colors = c("blue")) |> 
+          ena.plot.group(point = second.game.points, colors =c("blue"), 
+                         confidence.interval = "box")
+```
+
+
+### Plot an individual unit network and its point
+
+
+```{r}
+unit.A.line.weights = as.matrix(set.ena$line.weights$ENA_UNIT$`FirstGame.steven z`) # subset line weights
+unit.A.point = as.matrix(set.ena$points$ENA_UNIT$`FirstGame.steven z`) # subset ENA point
+```
+
+
+```{r}
+ena.plot(set.ena, title = "Individual network: `FirstGame`.steven z") |> 
+          ena.plot.network(network = unit.A.line.weights, colors = c("red")) |>
+          ena.plot.points(points = unit.A.point, colors = c("red"))
+```
+
+
+```{r}
+unit.B.line.weights = as.matrix(set.ena$line.weights$ENA_UNIT$`SecondGame.samuel o`) # subset line weights
+unit.B.point = as.matrix(set.ena$points$ENA_UNIT$`SecondGame.samuel o`) # subset ENA point
+```
+
+
+```{r}
+ena.plot(set.ena, title = "Individual network: `SecondGame`.samuel o") |> 
+          ena.plot.network(network = unit.B.line.weights, colors = c("blue")) |>
+          ena.plot.points(points = unit.B.point, colors = c("blue"))
+```
+
+
+```{r}
+ena.plot(set.ena, title = "Subtracted network: `FirstGame`.steven z (red) - `SecondGame`.samuel o (blue)")  |>
+          ena.plot.network(network = (unit.A.line.weights - unit.B.line.weights) * 5,
+          colors = c("red", "blue")) |>
+          ena.plot.points(points = unit.A.point, colors = c("red")) |> 
+          ena.plot.points(points = unit.B.point, colors = c("blue"))
+```
+
+### Plot everything, everywhere, all at once
+
+
+```{r, results=F, fig.keep='all'}
+#with helper function
+ena.plotter(set.ena,
+            points = T,
+            mean = T, 
+            network = T,
+            print.plots = T,
+            groupVar = "Condition",
+            groups = c("SecondGame","FirstGame"),
+            subtractionMultiplier = 5)
+```
+
+## Compare groups statistically
+
+```{r }
+# install.packages('lsr')
+library(lsr)
+```
+
+
+```{r}
+ena_first_points_d1 = as.matrix(set.ena$points$Condition$FirstGame)[,1]
+ena_second_points_d1 = as.matrix(set.ena$points$Condition$SecondGame)[,1]
+
+ena_first_points_d2 = as.matrix(set.ena$points$Condition$FirstGame)[,2]
+ena_second_points_d2 = as.matrix(set.ena$points$Condition$SecondGame)[,2]
+```
+
+
+```{r}
+# parametric tests
+t_test_d1 = t.test(ena_first_points_d1, ena_second_points_d1)
+t_test_d1
+
+t_test_d2 = t.test(ena_first_points_d2, ena_second_points_d2)
+t_test_d2
+```
+
+
+```{r}
+mean(ena_first_points_d1)
+mean(ena_second_points_d1)
+mean(ena_first_points_d2)
+mean(ena_second_points_d2)
+
+sd(ena_first_points_d1)
+sd(ena_second_points_d1)
+sd(ena_first_points_d2)
+sd(ena_second_points_d2)
+
+length(ena_first_points_d1)
+length(ena_second_points_d1)
+length(ena_first_points_d2)
+length(ena_second_points_d2)
+
+cohensD(ena_first_points_d1, ena_second_points_d1)
+cohensD(ena_first_points_d2, ena_second_points_d2)
+```
+
+
+```{r}
+# install.packages('rcompanion')
+library(rcompanion)
+```
+
+
+```{r}
+# non parametric tests
+w_test_d1 = wilcox.test(ena_first_points_d1, ena_second_points_d1)
+w_test_d2 = wilcox.test(ena_first_points_d2, ena_second_points_d2)
+
+w_test_d1
+w_test_d2
+```
+
+
+```{r}
+median(ena_first_points_d1)
+median(ena_second_points_d1)
+median(ena_first_points_d2)
+median(ena_second_points_d2)
+
+length(ena_first_points_d1)
+length(ena_second_points_d1)
+length(ena_first_points_d2)
+length(ena_second_points_d2)
+
+abs(wilcoxonR(ena_first_points_d1, ena_second_points_d1))
+abs(wilcoxonR(ena_first_points_d2, ena_second_points_d2))
+```
+
+
+## Model evaluation
+
+### Variance explained
+
+
+```{r}
+set.ena$model$variance
+```
+
+
+### Goodness of fit
+
+```{r}
+ena.correlations(set.ena)
+```
+
+### Close the interpretative loop
+
+
+```{r, results = 'asis', echo = F }
+ena.plot(set.ena, title = "Individual network: `SecondGame`.samuel o") |> 
+          ena.plot.network(network = as.matrix(set.ena$line.weights$ENA_UNIT$`SecondGame.samuel o`), colors = c("blue")) |>
+          ena.plot.points(points = as.matrix(set.ena$points$ENA_UNIT$`SecondGame.samuel o`), colors = c("blue"))
+```
+
+```{r, eval = F}
+tma::view(accum.ena, 
+     id_col = "ENA_UNIT", # do not need to change this
+     wh = c("SecondGame.samuel o"), # the unit we are interested in
+     units.by = c("Condition", "UserName"), # consistent with in 3.3.1 
+     conversation.by = c("Condition", "GroupName", "ActivityNumber"), # consistent with in 4.3.3
+     codes = c("Performance.Parameters", "Design.Reasoning"), # codes of choice
+     window = 7) # consistent with in 3.3.4
+```
+
+## Using ENA model outputs in other analyses
+
+
+```{r}
+regression_data = set.ena$points
+regression_data$CONFIDENCE.Change = as.numeric(regression_data$CONFIDENCE.Change)
+
+condition_regression = lm(CONFIDENCE.Change ~ MR1 + SVD2 + Condition, 
+                          data = regression_data, 
+                          na.action = na.omit)
+summary(condition_regression)
+```
+
+# Ordered Network Analysis with R
+
+## Install the ONA package and load the library
+
+```{r message = FALSE}
+# install.packages("ona", repos = c("https://cran.qe-libs.org", "https://cran.rstudio.org"))
+```
+
+```{r message = FALSE}
+library(ona)
+```
+
+```{r message = FALSE}
+# install.packages("tma", repos = c("https://cran.qe-libs.org", "https://cran.rstudio.org"))
+```
+
+```{r message = FALSE }
+library(tma)
+```
+
+## Dataset
+
+```{r}
+data = ona::RS.data
+```
+
+## Construct an ONA model
+
+### Specify units
+
+```{r}
+my_units <- c("Condition", "UserName") 
+```
+
+### Specify codes
+
+```{r}
+my_codes = c(
+          'Data',
+          'Technical.Constraints',
+          'Performance.Parameters',
+          'Client.and.Consultant.Requests',
+          'Design.Reasoning',
+          'Collaboration')
+```
+
+### Specify conversations
+
+```{r}
+my_hoo_rules <- conversation_rules(
+                  (Condition %in% UNIT$Condition & 
+                   GroupName %in% UNIT$GroupName & 
+                   ActivityNumber %in% UNIT$ActivityNumber))
+```
+
+### Specify the window
+
+```{r}
+window_size = 7
+```
+
+### Specify metadata
+
+```{r}
+metaCols = c("CONFIDENCE.Change","CONFIDENCE.Pre","CONFIDENCE.Post","C.Change")
+```
+
+### Accumulate connections
+
+```{r}
+accum.ona <-
+  contexts(data, 
+           units_by = my_units, 
+           hoo_rules = my_hoo_rules) |>
+  accumulate_contexts(codes = my_codes, 
+                      decay.function = decay(simple_window, window_size = 7),
+                      meta.data = metaCols,
+                      return.ena.set = FALSE) # keep this as FALSE to get an ONA model, otherwise it will return an undirected model)
+```
+
+### Construct an ONA model
+
+```{r}
+set.ona <- 
+  model(accum.ona)
+```
+
+
+```{r}
+set.ona <-
+  model(accum.ona,                             # the previously run accumulation above
+        rotate.using ="mean",                  # means rotation method
+        rotation.params =                      # two groups for means rotation in a list
+              list(FirstGame=accum.ona$meta.data$Condition=="FirstGame",
+                   `SecondGame`=accum.ona$meta.data$Condition=="SecondGame")   
+        )
+```
+
+## Summary of key model outputs
+
+### Connection counts
+
+```{r}
+set.ona$connection.counts
+```
+
+### Line weights
+
+```{r}
+set.ona$line.weights
+```
+
+### ONA points
+
+```{r}
+set.ona$points
+```
+
+### Rotation matrix
+
+```{r}
+set.ona$rotation.matrix
+```
+
+### Metadata
+
+```{r}
+set.ona$meta.data
+```
+
+## ONA visualization
+
+```{r}
+node_size_multiplier = 0.4 # scale up or down node sizes
+node_position_multiplier = 1 # zoom in or out node positions
+point_position_multiplier =1.5 # zoom in or out the point positions
+edge_arrow_saturation_multiplier = 1.5 # adjust the chevron color lighter or darker
+edge_size_multiplier = 1 # scale up or down edge sizes
+```
+
+### Plot a mean network
+
+```{r}
+ona:::plot.ena.ordered.set(set.ona, title = "FirstGame (red) mean network") |>
+  edges(
+    weights =set.ona$line.weights$Condition$FirstGame,
+    edge_size_multiplier = edge_size_multiplier,
+    edge_arrow_saturation_multiplier = edge_arrow_saturation_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    edge_color = c("red")) |>
+  nodes(
+    node_size_multiplier = node_size_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    self_connection_color = c("red"))
+```
+
+
+
+```{r}
+ona:::plot.ena.ordered.set(set.ona, title = "SecondGame (blue) mean network") |>
+  edges(
+    weights = set.ona$line.weights$Condition$SecondGame,
+    edge_size_multiplier = edge_size_multiplier,
+    edge_arrow_saturation_multiplier = edge_arrow_saturation_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    edge_color = c("blue")) |>
+  nodes(
+    node_size_multiplier = node_size_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    self_connection_color = c("blue"))
+
+```
+
+
+```{r}
+ona:::plot.ena.ordered.set(set.ona, title = "Subtracted mean network: `FirstGame` (red) vs `SecondGame` (blue)") |>
+  edges(
+    weights = (colMeans(set.ona$line.weights$Condition$FirstGame) - colMeans(set.ona$line.weights$Condition$SecondGame))*4, # optional weights multiplier to adjust readability
+    edge_size_multiplier = edge_size_multiplier,
+    edge_arrow_saturation_multiplier = edge_arrow_saturation_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    edge_color = c("red","blue")) |>
+  nodes(
+    node_size_multiplier = node_size_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    self_connection_color = c("red","blue"))
+```
+
+### Plot a mean network and its points
+
+```{r}
+ona:::plot.ena.ordered.set(set.ona, title = "points (dots), mean point (square), and confidence interval") |>
+  units(
+    points=set.ona$points$Condition$FirstGame, 
+    points_color = c("red"),
+    show_mean = TRUE, show_points = TRUE, with_ci = TRUE)
+```
+
+```{r}
+ona:::plot.ena.ordered.set(set.ona, title = "FirstGame (red) mean network") |>
+  units(
+    points=set.ona$points$Condition$FirstGame, 
+    points_color = c("red"),
+    show_mean = TRUE, show_points = TRUE, with_ci = TRUE) |>
+  edges(
+    weights =set.ona$line.weights$Condition$FirstGame,
+    edge_size_multiplier = edge_size_multiplier,
+    edge_arrow_saturation_multiplier = edge_arrow_saturation_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    edge_color = c("red")) |>
+  nodes(
+    node_size_multiplier = node_size_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    self_connection_color = c("red"))
+```
+
+```{r}
+ona:::plot.ena.ordered.set(set.ona, title = "points (dots), mean point (square), and confidence interval") |>
+  units(
+    points=set.ona$points$Condition$SecondGame, 
+    points_color = c("blue"),
+    show_mean = TRUE, show_points = TRUE, with_ci = TRUE)
+```
+
+```{r}
+ona:::plot.ena.ordered.set(set.ona, title = "SecondGame (blue) mean network") |>
+  units(
+    points=set.ona$points$Condition$SecondGame, 
+    points_color = "blue", 
+    show_mean = TRUE, show_points = TRUE, with_ci = TRUE) |>
+  edges(
+    weights = set.ona$line.weights$Condition$SecondGame,
+    edge_size_multiplier = edge_size_multiplier,
+    edge_arrow_saturation_multiplier = edge_arrow_saturation_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    edge_color = c("blue")) |>
+  nodes(
+    node_size_multiplier = node_size_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    self_connection_color = c("blue"))
+```
+
+
+```{r}
+# `FirstGame` and `SecondGame` subtracted plot
+ona:::plot.ena.ordered.set(set.ona, title = "Difference: `FirstGame` (red) vs `SecondGame` (blue)") |>
+  units(
+    points = set.ona$points$Condition$FirstGame, 
+    points_color = "red",
+    show_mean = TRUE, show_points = TRUE, with_ci = TRUE) |>
+  units(
+    points = set.ona$points$Condition$SecondGame, 
+    points_color = "blue",
+    show_mean = TRUE, show_points = TRUE, with_ci = TRUE) |>
+  edges(
+    weights = (colMeans(set.ona$line.weights$Condition$FirstGame) - colMeans(set.ona$line.weights$Condition$SecondGame))*4, # optional multiplier to adjust for readability
+    edge_size_multiplier = edge_size_multiplier,
+    edge_arrow_saturation_multiplier = edge_arrow_saturation_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    edge_color = c("red","blue")) |>
+  nodes(
+    node_size_multiplier = node_size_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    self_connection_color = c("red","blue"))
+```
+
+#### Plot an individual network and its points
+
+```{r}
+# first game
+ona:::plot.ena.ordered.set(set.ona, title = "FirstGame::steven z") |>
+  units(
+    points=set.ona$points$ENA_UNIT$`FirstGame::steven z`, 
+    points_color = "red", 
+    show_mean = FALSE, show_points = TRUE, with_ci = FALSE) |>
+  edges(
+    weights = set.ona$line.weights$ENA_UNIT$`FirstGame::steven z`,
+    edge_size_multiplier = edge_size_multiplier,
+    edge_arrow_saturation_multiplier = edge_arrow_saturation_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    edge_color = c("red")) |>
+  nodes(
+    node_size_multiplier = node_size_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    self_connection_color = c("red"))
+```
+
+```{r}
+# second game
+ona:::plot.ena.ordered.set(set.ona, title = "SecondGame::samuel o") |>
+  units(
+    points=set.ona$points$ENA_UNIT$`SecondGame::samuel o`, 
+    points_color = "blue", 
+    show_mean = FALSE, show_points = TRUE, with_ci = FALSE) |>
+  edges(
+    weights = set.ona$line.weights$ENA_UNIT$`SecondGame::samuel o`,
+    edge_size_multiplier = edge_size_multiplier,
+    edge_arrow_saturation_multiplier = edge_arrow_saturation_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    edge_color = c("blue")) |>
+  nodes(
+    node_size_multiplier = node_size_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    self_connection_color = c("blue"))
+```
+
+```{r}
+# units difference
+mean1 = as.vector(as.matrix(set.ona$line.weights$ENA_UNIT$`FirstGame::steven z`))
+mean2 = as.vector(as.matrix(set.ona$line.weights$ENA_UNIT$`SecondGame::samuel o`))
+
+subtracted.mean = mean1 - mean2
+```
+
+```{r}
+ona:::plot.ena.ordered.set(set.ona, title = "subtracted network of steven z (red) and Samuel (blue)") |> 
+  units(
+    points = set.ona$points$ENA_UNIT$`FirstGame::steven z`, points_color = "red",
+    point_position_multiplier = point_position_multiplier,
+    show_mean = FALSE, show_points = TRUE, with_ci = FALSE) |>
+  units(
+    points = set.ona$points$ENA_UNIT$`SecondGame::samuel o`, points_color = "blue",
+    point_position_multiplier = point_position_multiplier,
+    show_mean = FALSE, show_points = TRUE, with_ci = FALSE) |>
+  edges(
+    weights = subtracted.mean*2,
+    edge_size_multiplier = edge_size_multiplier,
+    edge_arrow_saturation_multiplier = edge_arrow_saturation_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    edge_color = c("red", "blue")) |>
+  nodes(
+    node_size_multiplier = node_size_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    self_connection_color = c("red", "blue")) 
+```
+
+## Compare groups statistically
+
+```{r }
+# install.packages('lsr')
+library(lsr)
+```
+
+
+```{r}
+ona_first_points_d1 = as.matrix(set.ona$points$Condition$FirstGame)[,1]
+ona_second_points_d1 = as.matrix(set.ona$points$Condition$SecondGame)[,1]
+
+ona_first_points_d2 = as.matrix(set.ona$points$Condition$FirstGame)[,2]
+ona_second_points_d2 = as.matrix(set.ona$points$Condition$SecondGame)[,2]
+```
+
+
+```{r}
+# parametric tests
+t_test_d1 = t.test(ona_first_points_d1, ona_second_points_d1)
+t_test_d1
+
+t_test_d2 = t.test(ona_first_points_d2, ona_second_points_d2)
+t_test_d2
+```
+
+
+```{r}
+mean(ona_first_points_d1)
+mean(ona_second_points_d1)
+mean(ona_first_points_d2)
+mean(ona_second_points_d2)
+
+sd(ona_first_points_d1)
+sd(ona_second_points_d1)
+sd(ona_first_points_d2)
+sd(ona_second_points_d2)
+
+length(ona_first_points_d1)
+length(ona_second_points_d1)
+length(ona_first_points_d2)
+length(ona_second_points_d2)
+
+cohensD(ona_first_points_d1, ona_second_points_d1)
+cohensD(ona_first_points_d2, ona_second_points_d2)
+```
+
+
+```{r}
+# install.packages('rcompanion')
+library(rcompanion)
+```
+
+```{r}
+# non parametric tests
+w_test_d1 = wilcox.test(ona_first_points_d1, ona_second_points_d1)
+w_test_d2 = wilcox.test(ona_first_points_d2, ona_second_points_d2)
+
+w_test_d1
+w_test_d2
+```
+
+```{r}
+median(ona_first_points_d1)
+median(ona_second_points_d1)
+median(ona_first_points_d2)
+median(ona_second_points_d2)
+
+length(ona_first_points_d1)
+length(ona_second_points_d1)
+length(ona_first_points_d2)
+length(ona_second_points_d2)
+
+abs(wilcoxonR(ona_first_points_d1, ona_second_points_d1))
+abs(wilcoxonR(ona_first_points_d2, ona_second_points_d2))
+```
+
+## Model evaluation
+
+### Variance explained
+
+```{r}
+set.ona$model$variance
+```
+
+### Goodness of fit
+
+```{r}
+ona::correlations(set.ona)
+```
+
+### Close the interpretative loop
+
+```{r echo=TRUE}
+ona:::plot.ena.ordered.set(set.ona, title = "SecondGame::samuel o") |>
+  units(
+    points=set.ona$points$ENA_UNIT$`SecondGame::samuel o`, 
+    points_color = "blue", 
+    show_mean = FALSE, show_points = TRUE, with_ci = FALSE) |>
+  edges(
+    weights = set.ona$line.weights$ENA_UNIT$`SecondGame::samuel o`,
+    edge_size_multiplier = edge_size_multiplier,
+    edge_arrow_saturation_multiplier = edge_arrow_saturation_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    edge_color = c("blue")) |>
+  nodes(
+    node_size_multiplier = node_size_multiplier,
+    node_position_multiplier = node_position_multiplier,
+    self_connection_color = c("blue"))
+```
+
+```{r, eval=F }
+tma::view(accum.ona, # the object stored our connection accumulation results in 4.3.6
+     wh = c("SecondGame::samuel o"), # the unit we are interested in
+     units.by = c("Condition", "UserName"), # consistent with in 4.3.1 
+     conversation.by = c("Condition", "GroupName", "ActivityNumber"), # consistent with in 4.3.3
+     codes = c("Performance.Parameters", "Design.Reasoning"), # codes of choice
+     window = 7) # consistent with in 4.3.4
+```
+ 
+ 
+# Projection
+
+## Projections in ENA
+
+```{r}
+data = rENA::RS.data
+
+#expert data
+exp.data = subset(data, Condition == "SecondGame")
+
+#novice data
+nov.data = subset(data, Condition == "FirstGame")
+
+#expert model
+units_exp = exp.data[,c("Condition","UserName")]
+conversation_exp = exp.data[,c("Condition","GroupName","ActivityNumber")]
+codes_exp = exp.data[,codeCols]
+meta_exp = exp.data[,c("CONFIDENCE.Change",
+                  "CONFIDENCE.Pre","CONFIDENCE.Post","C.Change")]
+
+set_exp = 
+  ena.accumulate.data(
+  text_data = exp.data[, 'text'],
+  units = units_exp,
+  conversation = conversation_exp,
+  codes = codes_exp,
+  metadata = meta_exp,
+  window.size.back = 7,
+) |>
+  ena.make.set()
+
+set_exp$rotation$rotation.matrix
+set_exp$model$points.for.projection
+
+#novice model
+units_nov = nov.data[,c("Condition","UserName")]
+conversation_nov = nov.data[,c("Condition","GroupName","ActivityNumber")]
+codes_nov = nov.data[,codeCols]
+meta_nov = nov.data[,c("CONFIDENCE.Change",
+                  "CONFIDENCE.Pre","CONFIDENCE.Post","C.Change")]
+
+set_nov = 
+  ena.accumulate.data(
+  text_data = nov.data[, 'text'],
+  units = units_nov,
+  conversation = conversation_nov,
+  codes = codes_nov,
+  metadata = meta_nov,
+  window.size.back = 7,
+) |>
+  ena.make.set(rotation.set = set_exp$rotation)
+```
+
+```{r}
+# plot expert model (what we projected into) Using plotting wrapper to save time
+plot_exp = ena.plotter(set_exp,
+                        points = T,
+                        mean = T, 
+                        network = T,
+                        print.plots = F
+                       )
+
+# plot test model (points from test model in training model space)
+plot_nov = ena.plotter(set_nov,
+                        points = T,
+                        mean = T, 
+                        network = T,
+                        print.plots = F)
+
+plot_exp$plot
+plot_nov$plot
+```
+
+## Projections in ONA
+
+```{r}
+data = ona::RS.data
+
+#expert data
+exp.data = subset(data, Condition == "SecondGame")
+
+#novice data
+nov.data = subset(data, Condition == "FirstGame")
+
+#shared unit cols  
+units = c("UserName","Condition","GroupName") 
+
+#shared code cols
+codes = c(
+          'Data',
+          'Technical.Constraints',
+          'Performance.Parameters',
+          'Client.and.Consultant.Requests',
+          'Design.Reasoning',
+          'Collaboration')
+
+#shared hoo
+hoo = conversation_rules(
+  (Condition %in% UNIT$Condition & GroupName %in% UNIT$GroupName))
+
+
+#expert accum
+accum.exp = contexts(exp.data, units_by = units, hoo_rules = hoo) |>
+  accumulate_contexts(codes = codes, 
+                      decay.function = decay(simple_window, window_size = 7),
+                      return.ena.set = FALSE, norm.by = NULL)
+#expert model
+set.exp = model(accum.exp)
+
+#novice accum
+accum.nov = contexts(nov.data, units_by = units, hoo_rules = hoo) |>
+  accumulate_contexts(codes = codes, 
+                      decay.function = decay(simple_window, window_size = 7),
+                      return.ena.set = FALSE, norm.by = NULL)
+#novice model
+set.nov = model(accum.nov)
+
+# projecting novice data into expert space
+set = model(accum.nov, rotation.set = set.exp$rotation)
+
+ona:::plot.ena.ordered.set(set, title = "novice data into expert space") |> 
+  units(
+    points = set$points, 
+    show_mean = TRUE, show_points = TRUE, with_ci = TRUE) |>
+  edges(
+    weights = set$line.weights) |>
+  nodes(
+    self_connection_color = "red",
+    node_size_multiplier = 0.6) 
+```

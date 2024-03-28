@@ -1,0 +1,411 @@
+---
+title: "Psychological Networks: A Modern Approach to Analysis of Learning and Complex Learning Processes"
+author: 
+   - Mohammed Saqr
+   - Emorie Beck
+   - Sonsoles López-Pernas
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+execute: 
+  warning: false
+---
+
+# Tutorial with R
+
+## The libraries
+
+```{r, warning = F, message = F, results = F}
+library(rio)
+library(tidyverse)
+library(bootnet)
+library(networktools)
+library(NetworkToolbox)
+library(NetworkComparisonTest)
+library(qgraph)
+library(mgm)
+library(matrixcalc)
+```
+
+## Importing and preparing the data
+
+
+```{r, warning = F, message = F }
+df <- 
+  import("https://github.com/sonsoleslp/labook-data/raw/main/11_universityCovid/data.sav") |>
+  drop_na()
+```
+
+
+```{r}
+aggregated <- df |> rowwise() |> mutate(
+       Competence = rowMeans(cbind(comp1.rec , comp2.rec, comp3.rec), na.rm = T),
+       Autonomy = rowMeans(cbind(auto1.rec , auto2.rec, auto3.rec), na.rm = T),
+       Motivation = rowMeans(cbind(lm1.rec , lm2.rec, lm3.rec), na.rm = T),
+       Emotion = rowMeans(cbind(pa1.rec , pa2.rec, pa3.rec), na.rm = T),
+       Relatedness = rowMeans(cbind(sr1.rec , sr2.rec, sr3.rec), na.rm = T),
+       SRL = rowMeans(cbind(gp1.rec , gp2.rec, gp3.rec), na.rm = T)) 
+```
+ 
+
+```{r}
+cols <- c("Relatedness", "Competence", "Autonomy", "Emotion", "Motivation", "SRL")
+
+filter(aggregated, country == 1) |> select(all_of(cols)) -> finlandData 
+filter(aggregated, country == 0) |> select(all_of(cols)) -> austriaData 
+filter(aggregated, gender  == 1) |> select(all_of(cols)) -> femaleData 
+filter(aggregated, gender  == 2) |> select(all_of(cols)) -> maleData
+select(aggregated, all_of(cols)) -> allData 
+```
+
+```{r}
+allData
+```
+
+## Assumption checks
+
+```{r}
+correlationMatrix <- cor(x = allData, use = c("pairwise.complete.obs"))
+is.positive.definite(correlationMatrix)
+```
+
+
+```{r}
+goldbricker(allData, p = 0.05, method = "hittner2003",
+            threshold = 0.25, corMin = 0.5, progressbar = FALSE)
+```
+
+## Network estimation
+
+```{r, warning = FALSE}
+allNetwork <- estimateNetwork(allData, default = "EBICglasso", 
+                              corMethod = "cor_auto", tuning = 0.5)
+summary(allNetwork)
+```
+
+
+## Plotting the network 
+
+```{r}
+allDataPlot <- plot(allNetwork)
+LX <- allDataPlot$layout
+```
+
+
+```{r}
+allDataPlot <- plot(
+  allNetwork, 
+  title = "Both countries combined", 
+  vsize = 9,                   
+  edge.labels = TRUE, 
+  cut = 0.10, 
+  minimum = 0.05, 
+  layout = "spring") 
+```
+
+## Explaining network relationships
+
+```{r}
+fitAllData <- mgm(as.matrix(allData), type = c("g", "g", "g", "g", "g", "g"))
+```
+
+```{r}
+# Compute the predictability
+predictAll <- predict(fitAllData, na.omit(allData))
+predictAll$errors$R2         # Check  predictability for all variables
+mean(predictAll$errors$R2)   # Mean predictability
+mean(predictAll$errors$RMSE) # Mean RMSE
+```
+
+```{r}
+data.frame(
+  var = predictAll$errors$Variable, 
+  R2 = predictAll$errors$R2, 
+  RMSE = predictAll$errors$RMSE
+  ) 
+```
+
+```{r}
+allDataPlot <- plot(
+  allNetwork, 
+  title = "Both countries combined", 
+  vsize = 9, 
+  edge.labels = TRUE, 
+  cut = 0.10, 
+  minimum = 0.05, 
+  pie = predictAll$errors$R2
+) 
+```
+
+## Network inference
+
+```{r}
+centralityPlot(allNetwork, include = c("ExpectedInfluence", "Strength"), scale = "z-scores" )  
+```
+
+```{r}
+centralityTable(allNetwork)
+```
+
+```{r,message=FALSE , warning=FALSE }
+Degree <- degree(allNetwork$graph)
+Strength <- strength(allNetwork$graph)
+Betweenness <- betweenness(allNetwork$graph)
+Closeness <- closeness(allNetwork$graph)
+Eigenvector <- eigenvector(allNetwork$graph)
+Leverage <- leverage(allNetwork$graph)
+data.frame(Var = names(Degree), Degree, Strength, Betweenness, Closeness, Eigenvector, Leverage) 
+```
+
+
+```{r}
+allNetwork_cor <- estimateNetwork(allData, default = "cor", verbose = FALSE)
+allNetwork_mgm <- estimateNetwork(allData, default = "ggmModSelect", verbose = FALSE)
+allNetwork_relimp <- estimateNetwork(allData, default = "relimp", verbose = FALSE)
+```
+
+
+```{r, fig.width = 7, fig.height = 3}
+layout(t(1:4))
+plot(allNetwork_cor, title = "Correlation", vsize = 18, edge.labels = TRUE,
+     cut = 0.10, minimum = 0.05, layout = LX) 
+plot(allNetwork, title = "EBICglasso", vsize = 18, edge.labels = TRUE, 
+     cut = 0.10, minimum = 0.05, layout = LX)
+plot(allNetwork_mgm, title = "ggmModSelect", vsize = 18, edge.labels = TRUE, 
+     cut = 0.10, minimum = 0.05, layout = LX)
+plot(allNetwork_relimp, title = "Relative importance", vsize = 18, edge.labels = TRUE, 
+     cut = 0.10, minimum = 0.05, layout = LX) 
+```
+
+## Comparing networks
+
+```{r}
+### Check the assumptions
+## Finland
+# check for positive definitiveness
+correlationMatrix <- cor(x = finlandData, use = c("pairwise.complete.obs"))
+is.positive.definite(correlationMatrix)
+
+# check for redundancy
+goldbricker(finlandData, p = 0.05, method = "hittner2003",
+            threshold = 0.25, corMin = 0.5, progressbar = FALSE)
+``` 
+
+
+```{r}
+## Austria
+# check for positive definitiveness
+correlationMatrix <- cor(x = austriaData, use = c("pairwise.complete.obs"))
+is.positive.definite(correlationMatrix)
+
+# check for redundancy
+goldbricker(austriaData, p = 0.05, method = "hittner2003",
+            threshold = 0.25, corMin = 0.5, progressbar = FALSE)
+```
+
+```{r}
+#Estimate the networks 
+finlandNetwork <- estimateNetwork(finlandData, default = "EBICglasso", 
+                                  corMethod = "cor_auto", tuning = 0.5)
+austriaNetwork <- estimateNetwork(austriaData, default = "EBICglasso", 
+                                  corMethod = "cor_auto", tuning = 0.5)
+```
+
+```{r}
+# Compute the predictability
+fitFinland <- mgm(
+  as.matrix(finlandData), # data 
+  c("g" ,"g", "g", "g" ,"g" ,"g"),  # distribution for each var
+  verbatim = TRUE, # hide warnings and progress bar
+  signInfo = FALSE # hide message about signs
+  )
+predictFinland <- predict(fitFinland, na.omit(finlandData))
+
+mean(predictFinland$errors$R2) # Mean predictability of Finland: 0.3085
+mean(predictFinland$errors$RMSE) # Mean RMSE of Finland: 0.8283333
+
+fitAustria <- mgm(
+  as.matrix(austriaData), # data
+  c("g" ,"g", "g", "g" ,"g" ,"g"), # distribution for each var
+  verbatim = TRUE, # hide warnings and progress bar
+  signInfo = FALSE # hide message about signs
+  )
+predictAustria <- predict(fitAustria, na.omit(austriaData))
+
+mean(predictAustria$errors$R2) # Mean predictability of Austria: 0.3436667
+mean(predictAustria$errors$RMSE) # Mean RMSE of Austria: 0.8036667
+```
+
+
+```{r, fig.width=8, fig.height=2.5}
+layout(t(1:3))
+AverageLayout <-  averageLayout(finlandNetwork, austriaNetwork)
+
+plot(finlandNetwork,             # input network
+     title = "Finland",          # plot title
+     vsize = 19,                 # size of the nodes
+     edge.labels = TRUE,         # label the edge weights
+     cut = 0.10,                 # saturate edges > .10
+     minimum = 0.05,             # remove edges < .05
+     pie = predictAll$errors$R2, # put R2 as pie
+     layout = LX)                # set the layout
+
+plot(austriaNetwork,             # input network
+     title = "Austria",          # plot title
+     vsize = 19,                 # size of the nodes
+     edge.labels = TRUE,         # label the edge weights
+     cut = 0.10,                 # saturate edges > .10
+     minimum = 0.05,             # remove edges < .05
+     pie = predictAll$errors$R2, # put R2 as pie
+     layout = LX)                # set the layout
+
+qgraph(finlandNetwork$graph - abs(austriaNetwork$graph), 
+       title = "Difference",                  # plot title
+       theme = allDataPlot$Arguments$theme,   # borrow the theme
+       vsize = 19,                            # size of the nodes
+       edge.labels = TRUE,                    # label the edge weights
+       labels = allDataPlot$Arguments$labels, # node labels
+       cut = 0.10,                            # saturate edges > .10
+       layout = LX)                           # set the layout
+```
+
+
+```{r}
+centralityPlot(
+  list(Finland = finlandNetwork,
+       Austria = austriaNetwork),
+  include = c("ExpectedInfluence", "Strength")) 
+```
+
+
+```{r}
+set.seed(1337)
+Compared <- NCT(
+  finlandNetwork,         # network 1
+  austriaNetwork,         # network 2
+  verbose = FALSE,        # hide warnings and progress bar
+  it = 1000,              # number of iterations
+  abs = T,                # test strength or expected influence?
+  binary.data = FALSE,    # set data distribution
+  test.edges = TRUE,      # test edge differences
+  edges = 'all',          # which edges to test
+  test.centrality	= TRUE, # test centrality
+  progressbar = FALSE     # progress bar
+  )
+
+Compared$glstrinv.sep # Separate global strength values of the individual networks
+Compared$glstrinv.real # Difference in global strength between the networks
+Compared$glstrinv.pval # p-value of strength difference
+Compared$nwinv.real # Maximum difference in any of the edges between networks
+Compared$einv.real # Difference in edge weight of the observed networks
+Compared$einv.pvals # Holm-Bonferroni adjusted p-values for each edge
+Compared$diffcen.real # Difference in centralities
+Compared$diffcen.pval # Holm-Bonferroni adjusted p-values for each centrality
+```
+
+## The variability network
+
+```{r, warning=FALSE}
+# Construct a network where edges are standard deviations across edge weights of networks
+edgeMeanJoint <- matrix(0, 6, 6)
+edgeSDJoint <- matrix(0, 6, 6)
+for(i in 1:6){
+  for(j in 1:6) {
+    vector <- c(getWmat(finlandNetwork)[i, j], getWmat(austriaNetwork)[i, j])
+    edgeMeanJoint[i, j] <- mean(vector) 
+    edgeSDJoint[i, j] <- sd(vector) 
+  } 
+} 
+```
+
+
+```{r}
+qgraph(edgeSDJoint, layout = LX, edge.labels = TRUE,
+       labels = allDataPlot$Arguments$labels, vsize = 9, 
+       cut = 0.09, minimum = 0.01, theme = "colorblind")
+```
+
+
+```{r, message=FALSE, warning=FALSE, fig.height=2.5, fig.width=8, echo = 2:12}
+layout(t(1:3))
+maleNetwork <- estimateNetwork(maleData, default = "EBICglasso")
+femaleNetwork <- estimateNetwork(femaleData, default = "EBICglasso")
+
+plot(maleNetwork, title = "Male", vsize = 9, edge.labels = TRUE, 
+     cut = 0.10, minimum = 0.05, layout = LX) 
+
+plot(femaleNetwork, title = "Female", vsize = 9, edge.labels = TRUE, 
+     cut = 0.10, minimum = 0.05, layout = LX)
+
+qgraph(femaleNetwork$graph - maleNetwork$graph, title = "Difference", cut = 0.1,
+       labels = allDataPlot$Arguments$labels, vsize = 9,minimum = 0.01, 
+       edge.labels = TRUE, layout = LX, theme = "colorblind")
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+ComparedGender <- NCT(
+  maleNetwork, # network 1
+  femaleNetwork, # network 2
+  verbose = FALSE,  # hide warnings and progress bar
+  it = 1000, # number of iterations
+  abs = T, # test strength or expected influence?
+  binary.data = FALSE, # set data distribution
+  test.edges = TRUE, # test edge differences
+  edges = 'all', # which edges to test
+  progressbar = FALSE) # progress bar
+
+ComparedGender$einv.pvals # Holm-Bonferroni adjusted p-values for each edge
+```
+
+## Evaluation of robustness and accuracy
+
+```{r}
+nCores <- parallel::detectCores() - 1
+# Non-parametric bootstrap for stability of edges and of edge differences
+
+allBoot <-  bootnet(
+  allNetwork,                # network input
+  default = "EBICglasso",    # method
+  nCores = nCores,           # number of cores for parallelization
+  computeCentrality = FALSE, # estimate centrality?
+  statistics = "edge"        # what statistics do we want?
+  )
+```
+
+
+```{r}
+plot(allBoot, plot = "area", order = "sample", legend = FALSE)
+```
+
+
+```{r,  fig.width=4, fig.height=4, fig.dpi=700}
+plot(allBoot, plot = "difference", order = "sample", onlyNonZero = FALSE, labels = TRUE)
+```
+
+
+```{r}
+set.seed(1)
+centBoot <- bootnet(
+  allNetwork,                # network input
+  default = "EBICglasso",    # method
+  type = "case",             # method for testing centrality stability
+  nCores = nCores,           # number of cores
+  computeCentrality = TRUE,  # compute centrality
+  statistics = c("strength", "expectedInfluence"),
+  nBoots = 19000,            # number of bootstraps
+  caseMin = .05,             # min cases to drop
+  caseMax = .95              # max cases to drop
+  )
+```
+
+
+```{r, eval = F}
+corStability(centBoot)
+```
+ 
+
+```{r}
+plot(centBoot)
+```

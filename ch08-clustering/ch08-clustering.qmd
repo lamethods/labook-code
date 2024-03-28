@@ -1,0 +1,507 @@
+---
+title: "Dissimilarity-based Cluster Analysis of Educational Data: A Comparative Tutorial using R"
+author:
+  - Keefe Murphy
+  - Sonsoles López-Pernas
+  - Mohammed Saqr
+format: 
+  html:
+    df-print: "paged"
+    fig-align: "center"
+---
+
+```{r}
+kmeans_pp <- function(X, # data
+                      K  # number of centroids
+                      ) {
+  
+  # sample initial centroid from distinct rows of X
+  X       <- unique(as.matrix(X))
+  new_center_index <- sample(nrow(X), 1)
+  centers <- X[new_center_index,, drop=FALSE]
+  
+  # let x be all observations not yet chosen as a centroid
+  X <- X[-new_center_index,, drop=FALSE]
+  
+  if(K >= 2) {
+    # loop over remaining centroids
+    for(kk in 2:K) {
+      
+      # calculate distances from all observations to all already chosen centroids
+      distances <- apply(X, 1, function(x) min(sum((x - centers)^2)))
+      
+      # sample new centroid with probability proportional to squared Euclidean distance
+      probabilities <- distances/sum(distances)
+      new_center_index <- sample(nrow(X), 1, prob=probabilities)
+      
+      # record the new centroid and remove it for the next iteration
+      centers <- rbind(centers, X[new_center_index,, drop=FALSE])
+      X <- X[-new_center_index,, drop=FALSE]
+    }
+  }
+  
+  # add random jitter to distinguish non-unique centroids and return
+  centers[duplicated(centers)] <- jitter(centers[duplicated(centers)])
+  return(centers)
+}
+```
+
+ 
+# Tutorial with R 
+
+
+```{r, results=FALSE, message=FALSE, warning=FALSE}
+options(scipen=999)
+library(gt)
+library(pander)
+library(cluster)
+library(rio)
+library(tidyverse)
+```
+
+
+## The data set
+
+
+```{r}
+URL <- "https://github.com/lamethods/data/raw/main/6_snaMOOC/"
+df <- import(paste0(URL, "Centralities.csv"))
+df
+```
+
+
+```{r}
+demog <- import(paste0(URL, "DLT1%20Nodes.csv"))
+demog <- demog |> 
+  select(UID, experience, gender, region) |> 
+  mutate_at(vars(-UID), as.factor)
+demog
+``` 
+
+
+### Pre-processing the data
+
+```{r}
+df |> is.na() |> which(arr.ind=TRUE)
+```
+
+
+```{r}
+obs_ind <- complete.cases(df) & demog$gender != "NULL"
+df$name[!obs_ind] # indices of observations with missing values
+
+df <- df |> filter(obs_ind)
+demog <- demog |> filter(obs_ind) |> droplevels()
+```
+
+
+```{r, eval=FALSE}
+pairs(df[,-1])
+```
+
+```{r, echo=FALSE, fig.height=7.75, fig.width=7.75}
+pairs(df[,-1], 
+      pch=c(rep(1, nrow(df) - 2), 4, 4), 
+      col=c(rep(1, nrow(df) - 2), 2, 2))
+```
+
+
+```{r}
+keep_ind <- 1:(nrow(df) - 2)
+
+df <- df |> slice(keep_ind)
+demog <- demog |> slice(keep_ind)
+```
+
+
+```{r}
+sdf <- scale(df[,-1], center=TRUE, scale=TRUE)
+```
+
+
+```{r}
+merged_df <- data.frame(name = df$name, sdf) |>
+  merge(demog, by=1) |> 
+  select(-name)
+```
+
+
+```{r}
+table(merged_df$experience)
+table(merged_df$gender)
+table(merged_df$region)
+```
+
+## Clustering applications {#sec-apps}
+
+```{r}
+set.seed(2024)
+```
+
+### $K$-Means application {#sec-kmapp}
+
+```{r}
+km1 <- kmeans(sdf, centers=3)
+km1
+```
+
+
+```{r}
+km1$tot.withinss
+```
+
+
+```{r}
+km2 <- kmeans(sdf, centers=3, nstart=50, iter.max=100)
+km2$tot.withinss
+```
+
+
+```{r}
+km3 <- kmeans(sdf, centers=kmeans_pp(sdf, K=3), iter.max=100)
+km3$tot.withinss
+```
+
+
+```{r}
+KMPP <- replicate(10, list(kmeans(sdf, iter.max=100,
+                                  centers=kmeans_pp(sdf, K=3))))
+```
+
+
+```{r}
+TWCSS <- sapply(KMPP, "[[", "tot.withinss")
+TWCSS
+```
+
+
+```{r}
+km4 <- KMPP[[which.min(TWCSS)]]
+km4$tot.withinss
+```
+
+
+```{r, cache=TRUE}
+K <- 10 # set upper limit on range of K values
+
+TWCSS <- numeric(K) # allocate space for TWCSS estimates
+
+KM <- list() # allocate space for kmeans() output
+
+for(k in 1:K) { # loop over k=1,...,K
+  
+  # Run K-means using K-Means++ initialisation: 
+  # use the current k value and do so ten times if k > 1
+  KMPP    <- replicate(ifelse(k > 1, 10, 1), 
+                       list(kmeans(sdf, iter.max=100,
+                                   centers=kmeans_pp(sdf, K=k))))
+  
+  # Extract and store the solution which minimises the TWCSS
+  KM[[k]] <- KMPP[[which.min(sapply(KMPP, "[[", "tot.withinss"))]]
+  
+  # Extract the TWCSS value for the current value of k
+  TWCSS[k] <- KM[[k]]$tot.withinss
+}
+```
+
+```{r, echo=FALSE, fig.height=4.25, fig.width=5.5}
+par(mar=c(3.1, 5.1, 1.1, 1.1))
+plot(x=1:K, y=TWCSS, type="b",
+     xlab="K", ylab="Total Within-Cluster\n Sum-of-Squares")
+```
+
+
+```{r}
+K <- 4
+
+KM[[K]]$size
+
+KM[[K]]$centers
+```
+
+
+```{r}
+rescaled_centroids <- t(apply(KM[[K]]$centers, 1, function(r) {
+                        r * attr(sdf, "scaled:scale") + attr(sdf, "scaled:center") 
+                        } ))
+round(rescaled_centroids, 4)
+```
+ 
+
+### $K$-Medoids application {#sec-pamapp}
+
+```{r}
+dist_euclidean <- dist(sdf, method="euclidean")
+
+dist_manhattan <- dist(sdf, method="manhattan")
+
+dist_minkowski3 <- dist(sdf, method="minkowski", p=3)
+```
+
+
+```{r}
+dist_gower <- daisy(merged_df, metric="gower")
+```
+
+
+```{r, cache=TRUE}
+K <- 10
+WCTD_euclidean <- numeric(K)
+pam_euclidean <- list()
+for(k in 1:K) {
+  pam_euclidean[[k]] <- pam(dist_euclidean, k=k, variant="faster", nstart=50)
+  WCTD_euclidean[k] <- pam_euclidean[[k]]$objective[2]
+}
+```
+
+
+```{r, cache=TRUE, fig.height=5.125, fig.width=5.75}
+
+WCTD_manhattan <- numeric(K)
+pam_manhattan <- list()
+for(k in 1:K) {
+  pam_manhattan[[k]] <- pam(dist_manhattan, k=k, variant="faster", nstart=50)
+  WCTD_manhattan[k] <- pam_manhattan[[k]]$objective[2]
+}
+WCTD_minkowski3 <- numeric(K)
+pam_minkowski3 <- list()
+for(k in 1:K) {
+  pam_minkowski3[[k]] <- pam(dist_minkowski3, k=k, variant="faster", nstart=50)
+  WCTD_minkowski3[k] <- pam_minkowski3[[k]]$objective[2]
+}
+WCTD_gower <- numeric(K)
+pam_gower <- list()
+for(k in 1:K) {
+  pam_gower[[k]] <- pam(dist_gower, k=k, variant="faster", nstart=50)
+  WCTD_gower[k] <- pam_gower[[k]]$objective[2]
+}
+par(mfrow=c(2,2), mar=c(4,4,1,1))
+plot(1:K, WCTD_euclidean, xlab="K", ylab="WCTD (Euclidean)", type="b")
+plot(1:K, WCTD_manhattan, xlab="K", ylab="WCTD (Manhattan)", type="b")
+plot(1:K, WCTD_gower, xlab="K", ylab="WCTD (Gower)", type="b")
+plot(1:K, WCTD_minkowski3, xlab="K", ylab="WCTD (Minkowski)", type="b")
+par(mfrow=c(1, 1))
+```
+
+
+```{r}
+K <- 3
+
+table(pam_euclidean[[K]]$clustering)
+```
+
+
+```{r}
+pam_euclidean[[K]]$medoids
+```
+
+
+```{r}
+df |> 
+  slice(as.numeric(pam_euclidean[[K]]$medoids)) |>
+  round(4)
+```
+
+
+```{r, eval=FALSE}
+table(pam_euclidean[[3]]$clustering,
+      KM[[4]]$cluster)
+``` 
+
+
+### Agglomerative hierarchical clustering application {#sec-hcapp}
+
+
+```{r}
+hc_minkowski3_complete <- hclust(dist_minkowski3, method="complete")
+
+hc_manhattan_single <- hclust(dist_manhattan, method="single")
+
+hc_gower_average <- hclust(dist_gower, method="average")
+
+hc_euclidean_ward <- hclust(dist_euclidean, method="ward.D2")
+
+hc_euclidean2_centroid <- hclust(dist_euclidean^2, method="ward.D2")
+```
+
+
+```{r}
+plot(hc_minkowski3_complete, labels=FALSE, 
+     main="", xlab="Minkwoski Distance (p=3) with Complete Linkage")
+plot(hc_manhattan_single, labels=FALSE, 
+     main="", xlab="Manhattan Distance with Single Linkage")
+plot(hc_gower_average, labels=FALSE, 
+     main="", xlab="Gower Distance with Average Linkage")
+plot(hc_euclidean_ward, labels=FALSE, 
+     main="", xlab="Euclidean Distance with the Ward Criterion")
+```
+
+
+
+```{r, echo=FALSE, fig.height=4, fig.width=5}
+par(mar=c(1.1, 3.1, 1.1, 1.1))
+plot(hc_euclidean_ward, labels=FALSE, main="", xlab=NA, sub=NA)
+mtext("Euclidean Distance with the Ward Criterion", side=1)
+abline(h=45, col="red")
+abline(h=30.5, col="blue")
+abline(h=25, col="green")
+abline(h=17.5, col="magenta")
+legend("topright", ncol=2, cex=0.6,
+       c("Height", 45, 30.5, 25, 17.5, "K", 2, 3, 4, 5),
+       lty=c(NA, 1, 1, 1, 1, NA, NA, NA, NA),
+       col=c(NA, "red", "blue", "green", "magenta", NA, NA, NA, NA))
+```
+
+
+```{r}
+hc_ward2 <- cutree(hc_euclidean_ward, h=45)
+```
+
+
+```{r}
+head(hc_ward2)
+table(hc_ward2)
+```
+
+
+### Identifying the optimal clustering solution {#sec-sil}
+
+```{r}
+kmeans_sil <- silhouette(kmeans(sdf, centers=kmeans_pp(sdf, K=4),
+                                iter.max=100)$cluster, 
+                         dist_euclidean)
+```
+
+```{r}
+hclust_sil <- silhouette(cutree(hclust(dist_euclidean, method="ward.D2"), k=2), 
+                         dist_euclidean)
+```
+
+
+```{r}
+pam_sil <- silhouette(pam(dist_euclidean, k=3, variant="faster", nstart=50))
+```
+
+
+```{r, fig.width=9, fig.height=9, dev = "png", dpi = 700}
+plot(hclust_sil, main="", col=2:3)
+```
+
+
+```{r}
+head(hclust_sil)
+```
+
+
+```{r}
+K <- 10
+ASW <- function(x) mean(x[,3])
+silhouettes <- data.frame(K=2:K,
+  kmeans=sapply(2:K, function(k) ASW(silhouette(KM[[k]]$cluster, dist_euclidean))),
+  kmedoids_euclidean=sapply(2:K, function(k) ASW(silhouette(pam_euclidean[[k]]))),
+  kmedoids_manhattan=sapply(2:K, function(k) ASW(silhouette(pam_manhattan[[k]]))),
+  kmedoids_minkowski3=sapply(2:K, function(k) ASW(silhouette(pam_minkowski3[[k]]))),
+  kmedoids_gower=sapply(2:K, function(k) ASW(silhouette(pam_gower[[k]]))),
+  hc_euclidean_ward=sapply(2:K, function(k) ASW(silhouette(cutree(hc_euclidean_ward, 
+                                                             k), dist_euclidean))))
+```
+
+
+```{r, echo=FALSE, fig.height=4.125, fig.width=5.5}
+par(mar=c(4.1, 4.1, 1.1, 1.1))
+matplot(silhouettes[,-1], ylab="ASW", xlab="K", xaxt="n", type="b", 
+        pch=1:(ncol(silhouettes) - 1), col=1:(ncol(silhouettes) - 1))
+axis(1, 1:9, 2:K)
+legend("topright", colnames(silhouettes)[-1], ncol=2, cex=0.75, inset=0.05,
+       col=1:(ncol(silhouettes) - 1), pch=1:(ncol(silhouettes) - 1))
+``` 
+
+
+```{r,  fig.width=15, fig.height=16.25 }
+par(mfrow=c(2,2), mar=c(5.1, 1.1, 4.1, 1.1))
+Kmeans2_sil <- silhouette(KM[[2]]$cluster, dist_euclidean)
+plot(Kmeans2_sil, main="K-Means (K=2)", col=2:3)
+
+pam_manhattan2 <- silhouette(pam_manhattan[[2]])
+plot(pam_manhattan2, main="K-Medoids (Manhattan, K=2)", col=2:3)
+
+pam_minkowski33 <- silhouette(pam_minkowski3[[3]])
+plot(pam_minkowski33, main="K-Medoids (Minkowski, K=3)", col=2:4)
+
+pam_euclidean3 <- silhouette(pam_euclidean[[3]])
+plot(pam_euclidean3, main="K-Medoids (Euclidean, K=3)", col=2:4)
+par(mfrow=c(1,1))
+```
+
+
+```{r}
+silhouettes |> 
+  filter(K == 3) |> 
+  select(kmedoids_euclidean, kmedoids_minkowski3)
+```
+
+
+```{r}
+sum(silhouette(pam_euclidean[[3]])[,3] < 0)
+sum(silhouette(pam_minkowski3[[3]])[,3] < 0)
+```
+
+### Interpreting the optimal clustering solution {#sec-optimal}
+
+
+```{r}
+final_pam <- pam_euclidean[[3]]
+```
+
+
+```{r}
+df |> 
+  slice(as.numeric(final_pam$medoids)) |> 
+  round(4) |> 
+  mutate(size=table(final_pam$clustering)) |>
+  left_join(slice(demog |> 
+                    select(UID, experience), 
+                  as.numeric(final_pam$medoids)), 
+            by=join_by(name == UID)) |>
+  select(-name)
+```
+
+
+```{r}
+final_pam$clustering <- factor(final_pam$clustering, 
+                               labels=c("leaders", "coordinators", "isolates"))
+table(final_pam$clustering)
+```
+
+
+```{r}
+df |>
+  group_by(clusters=final_pam$clustering) |> 
+  select(-name) |> 
+  summarise_all(mean) |>
+  mutate_if(is.numeric, round, 2) |> 
+  pivot_longer(cols=-clusters, 
+               names_to="centrality") |>   
+  pivot_wider(names_from=clusters, 
+              values_from=value) 
+```
+
+
+```{r}
+table(final_pam$clustering, 
+      merged_df$experience,
+      dnn=c("Clusters", "Experience"))
+```
+
+
+```{r}
+clusplot(final_pam,                                    # the pam() output
+         main="", sub=NA,            # remove the main title and subtitle
+         lines=0,                     # do not draw any lines on the plot
+         labels=4,                              # only label the ellipses
+         col.clus="black",               # colour for ellipses and labels
+         col.p=as.numeric(final_pam$clustering) + 1, # colours for points
+         cex.txt=0.75,                      # control size of text labels
+         xlim=c(-4, 17)          # expand x-axis to avoid trimming labels
+         )
+```
