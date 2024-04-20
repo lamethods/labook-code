@@ -140,6 +140,7 @@ events |>
 
 Store the processed and prepared events data
 ```{r}
+dir.create("preprocessed_data", showWarnings = FALSE)
 saveRDS(events, "preprocessed_data/events.RData")
 ```
 
