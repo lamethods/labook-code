@@ -20,6 +20,7 @@ format:
 Installing the `ggplot2` library. 
 
 ```{r, message = FALSE, error = FALSE, warning = FALSE, include = FALSE}
+options(repos = c(CRAN = "https://cloud.r-project.org/"))
 install.packages("ggplot2")
 ```
 
