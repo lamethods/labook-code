@@ -350,9 +350,7 @@ report(fit)
 Draw the quantiles of the residuals and the theoretical quantiles
 ```{r}
 qqnorm(resid(fit))
-```
-Add a line through the theoretical quantiles
-```{r}
+# Add a line through the theoretical quantiles
 qqline(resid(fit))
 ```
 
