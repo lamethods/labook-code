@@ -584,7 +584,7 @@ edge_size_multiplier = 1 # scale up or down edge sizes
 ### Plot a mean network
 
 ```{r}
-ona:::plot.ena.ordered.set(set.ona, title = "FirstGame (red) mean network") |>
+ona:::plot.ena.directed.set(set.ona, title = "FirstGame (red) mean network") |>
   edges(
     weights =set.ona$line.weights$Condition$FirstGame,
     edge_size_multiplier = edge_size_multiplier,
@@ -600,7 +600,7 @@ ona:::plot.ena.ordered.set(set.ona, title = "FirstGame (red) mean network") |>
 
 
 ```{r}
-ona:::plot.ena.ordered.set(set.ona, title = "SecondGame (blue) mean network") |>
+ona:::plot.ena.directed.set(set.ona, title = "SecondGame (blue) mean network") |>
   edges(
     weights = set.ona$line.weights$Condition$SecondGame,
     edge_size_multiplier = edge_size_multiplier,
@@ -616,7 +616,7 @@ ona:::plot.ena.ordered.set(set.ona, title = "SecondGame (blue) mean network") |>
 
 
 ```{r}
-ona:::plot.ena.ordered.set(set.ona, title = "Subtracted mean network: `FirstGame` (red) vs `SecondGame` (blue)") |>
+ona:::plot.ena.directed.set(set.ona, title = "Subtracted mean network: `FirstGame` (red) vs `SecondGame` (blue)") |>
   edges(
     weights = (colMeans(set.ona$line.weights$Condition$FirstGame) - colMeans(set.ona$line.weights$Condition$SecondGame))*4, # optional weights multiplier to adjust readability
     edge_size_multiplier = edge_size_multiplier,
@@ -632,7 +632,7 @@ ona:::plot.ena.ordered.set(set.ona, title = "Subtracted mean network: `FirstGame
 ### Plot a mean network and its points
 
 ```{r}
-ona:::plot.ena.ordered.set(set.ona, title = "points (dots), mean point (square), and confidence interval") |>
+ona:::plot.ena.directed.set(set.ona, title = "points (dots), mean point (square), and confidence interval") |>
   units(
     points=set.ona$points$Condition$FirstGame, 
     points_color = c("red"),
@@ -640,7 +640,7 @@ ona:::plot.ena.ordered.set(set.ona, title = "points (dots), mean point (square),
 ```
 
 ```{r}
-ona:::plot.ena.ordered.set(set.ona, title = "FirstGame (red) mean network") |>
+ona:::plot.ena.directed.set(set.ona, title = "FirstGame (red) mean network") |>
   units(
     points=set.ona$points$Condition$FirstGame, 
     points_color = c("red"),
@@ -658,7 +658,7 @@ ona:::plot.ena.ordered.set(set.ona, title = "FirstGame (red) mean network") |>
 ```
 
 ```{r}
-ona:::plot.ena.ordered.set(set.ona, title = "points (dots), mean point (square), and confidence interval") |>
+ona:::plot.ena.directed.set(set.ona, title = "points (dots), mean point (square), and confidence interval") |>
   units(
     points=set.ona$points$Condition$SecondGame, 
     points_color = c("blue"),
@@ -666,7 +666,7 @@ ona:::plot.ena.ordered.set(set.ona, title = "points (dots), mean point (square),
 ```
 
 ```{r}
-ona:::plot.ena.ordered.set(set.ona, title = "SecondGame (blue) mean network") |>
+ona:::plot.ena.directed.set(set.ona, title = "SecondGame (blue) mean network") |>
   units(
     points=set.ona$points$Condition$SecondGame, 
     points_color = "blue", 
@@ -686,7 +686,7 @@ ona:::plot.ena.ordered.set(set.ona, title = "SecondGame (blue) mean network") |>
 
 ```{r}
 # `FirstGame` and `SecondGame` subtracted plot
-ona:::plot.ena.ordered.set(set.ona, title = "Difference: `FirstGame` (red) vs `SecondGame` (blue)") |>
+ona:::plot.ena.directed.set(set.ona, title = "Difference: `FirstGame` (red) vs `SecondGame` (blue)") |>
   units(
     points = set.ona$points$Condition$FirstGame, 
     points_color = "red",
@@ -711,7 +711,7 @@ ona:::plot.ena.ordered.set(set.ona, title = "Difference: `FirstGame` (red) vs `S
 
 ```{r}
 # first game
-ona:::plot.ena.ordered.set(set.ona, title = "FirstGame::steven z") |>
+ona:::plot.ena.directed.set(set.ona, title = "FirstGame::steven z") |>
   units(
     points=set.ona$points$ENA_UNIT$`FirstGame::steven z`, 
     points_color = "red", 
@@ -730,7 +730,7 @@ ona:::plot.ena.ordered.set(set.ona, title = "FirstGame::steven z") |>
 
 ```{r}
 # second game
-ona:::plot.ena.ordered.set(set.ona, title = "SecondGame::samuel o") |>
+ona:::plot.ena.directed.set(set.ona, title = "SecondGame::samuel o") |>
   units(
     points=set.ona$points$ENA_UNIT$`SecondGame::samuel o`, 
     points_color = "blue", 
@@ -756,7 +756,7 @@ subtracted.mean = mean1 - mean2
 ```
 
 ```{r}
-ona:::plot.ena.ordered.set(set.ona, title = "subtracted network of steven z (red) and Samuel (blue)") |> 
+ona:::plot.ena.directed.set(set.ona, title = "subtracted network of steven z (red) and Samuel (blue)") |> 
   units(
     points = set.ona$points$ENA_UNIT$`FirstGame::steven z`, points_color = "red",
     point_position_multiplier = point_position_multiplier,
@@ -871,7 +871,7 @@ ona::correlations(set.ona)
 ### Close the interpretative loop
 
 ```{r echo=TRUE}
-ona:::plot.ena.ordered.set(set.ona, title = "SecondGame::samuel o") |>
+ona:::plot.ena.directed.set(set.ona, title = "SecondGame::samuel o") |>
   units(
     points=set.ona$points$ENA_UNIT$`SecondGame::samuel o`, 
     points_color = "blue", 
@@ -1018,7 +1018,7 @@ set.nov = model(accum.nov)
 # projecting novice data into expert space
 set = model(accum.nov, rotation.set = set.exp$rotation)
 
-ona:::plot.ena.ordered.set(set, title = "novice data into expert space") |> 
+ona:::plot.ena.directed.set(set, title = "novice data into expert space") |> 
   units(
     points = set$points, 
     show_mean = TRUE, show_points = TRUE, with_ci = TRUE) |>
