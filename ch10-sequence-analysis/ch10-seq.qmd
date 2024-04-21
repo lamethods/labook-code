@@ -170,7 +170,7 @@ seq_heatmap(Seqobject, clusters_sessionsh)
 ```
 
 Sequence distribution plot for the k=3 cluster solution
-```{r, message=F, fig.align='center",fig.width=7,fig.height=4, dev="png"}
+```{r, message=F, fig.align='center',fig.width=7,fig.height=4, dev="png"}
 Cuts <- cutree(clusters_sessionsh, k = 3)
 Groups <- factor(Cuts, labels = paste("Cluster", 1:3))
 seqplot(Seqobject, type = "d", group = Groups, cex.legend = 0.8, ncol = 2, 
