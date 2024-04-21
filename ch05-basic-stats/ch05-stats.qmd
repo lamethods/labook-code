@@ -347,10 +347,10 @@ summary(fit)
 report(fit)
 ```
 
-Draw the quantiles of the residuals and the theoretical quantiles
+
+Draw the quantiles of the residuals and the theoretical quantiles and add a line through them
 ```{r}
 qqnorm(resid(fit))
-# Add a line through the theoretical quantiles
 qqline(resid(fit))
 ```
 
