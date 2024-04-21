@@ -10,6 +10,13 @@ authors:
 
 ## Tutorial: Building a temporal network
 
+Install necessary packages
+```{r, results=F, warning=F, message=F}
+options(repos = c(CRAN = "https://cloud.r-project.org/"))
+install.packages("scatterplot3d")
+install.packages("ergm")
+```
+
 Load library
 ```{r, results=F, warning=F, message=F}
 library(tsna)
