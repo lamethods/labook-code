@@ -141,7 +141,7 @@ Groups <- factor(Cuts, labels = paste("Cluster", 1:6))
 ```
 
 State distribution plots per cluster for the combined multi-channel sequences
-```{r, fig.height=7.5, fig.width=7.4, fig.dpi=500, fig.align='center'.",out.width='6in'}
+```{r, fig.height=7.5, fig.width=7.4, fig.dpi=500, fig.align='center', out.width='6in'}
 #| label: fig-statd-multi
 seqplot(multi_seq, type = "d", group = Groups, 
          ncol = 3, legend.prop = 0.1, border = NA)
@@ -186,7 +186,7 @@ mhmm_fit$em_results$best_opt_restart
 ```
 
 Multi-channel sequence index plots (don't forget to click enter on the console)
-```{r, fig.keep = c(2,3,4), fig.width=5.4, fig.height = 8, fig.dpi = 200, layout = c(1,1,1)"}
+```{r, fig.keep = c(2,3,4), fig.width=5.4, fig.height = 8, fig.dpi = 200, layout = c(1,1,1)}
 HIDDEN_STATES <- c("darkred", "pink", "darkblue", "purple", 
                    "lightgoldenrod1", "orange")
 
